@@ -17,6 +17,9 @@ import {
   query, orderBy, updateDoc, writeBatch, deleteDoc
 } from 'firebase/firestore';
 
+// 确保这一行在 LexiconApp 的开头部分
+const [dbLoading, setDbLoading] = useState(true);
+
 // --- Global Setup ---
 const apiKey = "AIzaSyA3opeTV-nPpDyAiCrYttD4uPSZmKMhQ34"; 
 const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
