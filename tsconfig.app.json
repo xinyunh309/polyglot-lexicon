@@ -8,7 +8,7 @@
     "types": ["vite/client"],
     "skipLibCheck": true,
     "noUnusedLocals": false,         // 忽略未使用的局部变量
-    "noUnusedParameters": false      // 忽略未使用的函数参数
+    "noUnusedParameters": false,      // 忽略未使用的函数参数
 
     /* Bundler mode */
     "moduleResolution": "bundler",
