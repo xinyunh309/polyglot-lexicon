@@ -5,7 +5,8 @@ import {
   Wand2, Lightbulb, MessageCircle,
   Merge, Send, Volume2, 
   Image as ImageIcon, Trash2,
-  Library, Sparkles, Archive, Check, Code, Clock
+  Library, Sparkles, Archive, Check, Code 
+  // ❌ 删除了 Clock，确保没有未使用变量
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -131,7 +132,6 @@ const formatPOS = (pos: string): string => {
     if (/[\u4e00-\u9fa5]/.test(pos)) return pos;
     return pos; 
 };
-// ❌ Removed unused isNoun function to fix build error
 
 // --- Types ---
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
@@ -215,7 +215,6 @@ const Tag = ({ icon: Icon, text, colorClass, onClick }: { icon?: any, text: stri
 
 // --- Main Application ---
 export default function LexiconAppV2() {
-  // ❌ Removed unused dbLoading state
   const [mainTab, setMainTab] = useState<'dictionary' | 'review' | 'library'>('library'); 
   const [inputMode, setInputMode] = useState<'word' | 'text' | 'import'>('word');
   const [currentLang, setCurrentLang] = useState<Language>('en');
@@ -267,7 +266,6 @@ export default function LexiconAppV2() {
       });
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
       setSavedItems(items); 
-      // ❌ Removed setDbLoading call
     });
   }, []);
 
