@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getAuth, signInAnonymously, onAuthStateChanged, type User 
+  getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, setDoc, onSnapshot, query, updateDoc, writeBatch, deleteDoc
