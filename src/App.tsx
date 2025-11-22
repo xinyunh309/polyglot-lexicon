@@ -3,10 +3,9 @@ import {
   BookOpen, RefreshCw, Globe, 
   Save, CheckCircle, Loader2, X,
   Wand2, Lightbulb, MessageCircle,
-  Merge, Send, Volume2, // ✅ 补回了 Volume2
+  Merge, Send, Volume2, 
   Image as ImageIcon, Trash2,
-  Library, Sparkles, Archive, Check, Code 
-  // ❌ 删除了 Calendar
+  Library, Sparkles, Archive, Check, Code, Clock
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -18,7 +17,7 @@ import {
 
 // --- Global Setup ---
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash"; // ✅ 强制改回 2.5 Flash
+const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
 
@@ -132,7 +131,7 @@ const formatPOS = (pos: string): string => {
     if (/[\u4e00-\u9fa5]/.test(pos)) return pos;
     return pos; 
 };
-const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
+// ❌ Removed unused isNoun function to fix build error
 
 // --- Types ---
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
@@ -216,7 +215,7 @@ const Tag = ({ icon: Icon, text, colorClass, onClick }: { icon?: any, text: stri
 
 // --- Main Application ---
 export default function LexiconAppV2() {
-  const [dbLoading, setDbLoading] = useState(true); 
+  // ❌ Removed unused dbLoading state
   const [mainTab, setMainTab] = useState<'dictionary' | 'review' | 'library'>('library'); 
   const [inputMode, setInputMode] = useState<'word' | 'text' | 'import'>('word');
   const [currentLang, setCurrentLang] = useState<Language>('en');
@@ -251,7 +250,6 @@ export default function LexiconAppV2() {
 
   // Filters
   const [filters, setFilters] = useState({ lang: 'all', level: 'all', pos: 'all', theme: 'all' });
-  // ✅ 修复：删除了未使用的 setSortMode
   const [sortMode] = useState<'recent' | 'review_soon' | 'level_asc'>('recent');
   const [showArchived, setShowArchived] = useState(false);
 
@@ -268,7 +266,8 @@ export default function LexiconAppV2() {
           items.push({ id: doc.id, ...d, addedAt: d.addedAt || d.created_at || Date.now(), entry: d.entry || { word: "Error", sentences: [] } } as any);
       });
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
-      setSavedItems(items); setDbLoading(false);
+      setSavedItems(items); 
+      // ❌ Removed setDbLoading call
     });
   }, []);
 
@@ -330,7 +329,6 @@ export default function LexiconAppV2() {
 
   const handleSmartEnrich = async () => {
       if (!entry) return;
-      // isEnriching variable removed to save space, using direct call logic
       const hasSents = entry.sentences && entry.sentences.length > 0;
       const task = hasSents ? `Add 1 NEW Advanced/Literary sentence. Do NOT delete existing.` : `Add 2 sentences.`;
       const res = await callGemini(`ENRICH "${entry.word}". Current: ${JSON.stringify(entry)} TASK: ${task} Add 5 synonyms, Cross-Lang. Return FULL JSON.`, true);
