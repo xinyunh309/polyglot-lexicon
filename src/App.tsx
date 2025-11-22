@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react'; // 移除了 React 默认引用
 import { 
-  Volume2, Copy, BookOpen, RefreshCw, Hash, Globe, 
-  ChevronRight, Save, CheckCircle, Loader2, X,
-  Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
-  Upload, Merge, Database, Send, Eye, EyeOff, 
-  Zap, Image as ImageIcon, Gamepad2, Trash2,
-  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar
+  BookOpen, RefreshCw, Globe, 
+  Save, CheckCircle, Loader2, X,
+  Wand2, Lightbulb, MessageCircle,
+  Merge, Send, 
+  Image as ImageIcon, Trash2,
+  Library, Sparkles, Archive, Check, Code, Calendar // 移除了未使用的图标
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -17,9 +17,9 @@ import {
 
 // --- Global Setup ---
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-1.5-flash"; // Keep 1.5 for stability
+const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
+const IMAGEN_MODEL = "imagen-3.0-generate-001";
 
 // --- Firebase Init ---
 const userFirebaseConfig = {
@@ -35,7 +35,6 @@ let auth: any;
 let db: any;
 let isFirebaseAvailable = false;
 
-// Helper to clean undefined fields
 const sanitizeData = (data: any): any => {
     return JSON.parse(JSON.stringify(data));
 };
@@ -67,6 +66,11 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
       }
       const wavHeader = new ArrayBuffer(44);
       const view = new DataView(wavHeader);
+      const writeString = (view: DataView, offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
       writeString(view, 0, 'RIFF');
       view.setUint32(4, 36 + len, true);
       writeString(view, 8, 'WAVE');
@@ -84,12 +88,6 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   } catch (e) {
       console.error("Audio conversion error", e);
       return "";
-  }
-};
-
-const writeString = (view: DataView, offset: number, string: string) => {
-  for (let i = 0; i < string.length; i++) {
-    view.setUint8(offset + i, string.charCodeAt(i));
   }
 };
 
@@ -133,7 +131,6 @@ const formatPOS = (pos: string): string => {
     if (/[\u4e00-\u9fa5]/.test(pos)) return pos;
     return pos; 
 };
-const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
 
 // --- Types ---
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
@@ -217,7 +214,6 @@ const Tag = ({ icon: Icon, text, colorClass, onClick }: { icon?: any, text: stri
 
 // --- Main Application ---
 export default function LexiconAppV2() {
-  const [dbLoading, setDbLoading] = useState(true); 
   const [mainTab, setMainTab] = useState<'dictionary' | 'review' | 'library'>('library'); 
   const [inputMode, setInputMode] = useState<'word' | 'text' | 'import'>('word');
   const [currentLang, setCurrentLang] = useState<Language>('en');
@@ -232,11 +228,8 @@ export default function LexiconAppV2() {
   // UI States
   const [inputWord, setInputWord] = useState('');
   const [inputText, setInputText] = useState('');
-  const [importText, setImportText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isEnriching, setIsEnriching] = useState(false); 
-  const [isFigurativeMode, setIsFigurativeMode] = useState(false);
-  const [showMarkdown, setShowMarkdown] = useState(false);
+  // isEnriching deleted, replaced with logic below
   const [isClustering, setIsClustering] = useState(false);
    
   // Story & Chat & Image
@@ -245,7 +238,6 @@ export default function LexiconAppV2() {
   const [storyContent, setStoryContent] = useState<StoryData | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const [isChatting, setIsChatting] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
@@ -258,7 +250,6 @@ export default function LexiconAppV2() {
   const [filters, setFilters] = useState({ lang: 'all', level: 'all', pos: 'all', theme: 'all' });
   const [sortMode, setSortMode] = useState<'recent' | 'review_soon' | 'level_asc'>('recent');
   const [showArchived, setShowArchived] = useState(false);
-  const [generatedMarkdown, setGeneratedMarkdown] = useState('');
 
   useEffect(() => { if (!isFirebaseAvailable) return; signInAnonymously(auth).catch(console.error); initAuth(); }, []);
   const initAuth = () => onAuthStateChanged(auth, () => {});
@@ -273,7 +264,7 @@ export default function LexiconAppV2() {
           items.push({ id: doc.id, ...d, addedAt: d.addedAt || d.created_at || Date.now(), entry: d.entry || { word: "Error", sentences: [] } } as any);
       });
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
-      setSavedItems(items); setDbLoading(false);
+      setSavedItems(items); 
     });
   }, []);
 
@@ -316,10 +307,9 @@ export default function LexiconAppV2() {
     }
     setIsGenerating(true); setMainTab('dictionary');
     const langInstr = isAutoLang ? `DETECT Lang. Matches FR/DE/JA/ES/IT/EN? Use it. Else EN.` : `Target: ${LANGUAGES.find(l => l.code === currentLang)?.label}.`;
-    const defFocus = isFigurativeMode ? `PRIORITY: FIGURATIVE MEANING.` : `Concise Simplified Chinese definition (B2-C2).`;
     const schema = `{ "word": "Lemma", "lang": "code", "pos": "POS (CN)", "gender": "m/f", "pronunciation": "...", "meaning": "CN Def", "idiom": "Phrase", "idiomMeaning": "Meaning", "level": "B2", "theme": "Topic (CN)", "morphology": "...", "sentences": [{ "type": "Original/Common", "target": "...", "translation": "..." }], "synonyms": ["..."], "antonyms": ["..."], "crossRefs": [{ "lang": "code", "word": "..." }] }`;
     const prompt = inputMode === 'word' || overrideWord 
-      ? `SYSTEM: Polyglot Lexicon. ${langInstr} User: CN Native. Goal: JP(N1), FR/ES/IT(C1). Gen JSON for "${target}". RULES: 1. ${defFocus} 2. CN output. 3. Kana only for JP. 4. CrossRefs in [fr,de,es,it,en,ja]. 5. Min 2 sentences. 6. LEVEL UPPERCASE. ${schema}`
+      ? `SYSTEM: Polyglot Lexicon. ${langInstr} User: CN Native. Goal: JP(N1), FR/ES/IT(C1). Gen JSON for "${target}". RULES: 1. Concise Simplified Chinese definition (B2-C2). 2. CN output. 3. Kana only for JP. 4. CrossRefs in [fr,de,es,it,en,ja]. 5. Min 2 sentences. 6. LEVEL UPPERCASE. ${schema}`
       : `Analyze text. ${langInstr} Extract 3-8 B2-C2 words/idioms. STRICT: Words must be in text. JSON Array. Text: "${target.substring(0, 2000)}" ${schema}`;
     
     const res = await callGemini(prompt, true);
@@ -336,11 +326,9 @@ export default function LexiconAppV2() {
 
   const handleSmartEnrich = async () => {
       if (!entry) return;
-      setIsEnriching(true);
       const hasSents = entry.sentences && entry.sentences.length > 0;
       const task = hasSents ? `Add 1 NEW Advanced/Literary sentence. Do NOT delete existing.` : `Add 2 sentences.`;
       const res = await callGemini(`ENRICH "${entry.word}". Current: ${JSON.stringify(entry)} TASK: ${task} Add 5 synonyms, Cross-Lang. Return FULL JSON.`, true);
-      setIsEnriching(false);
       if (res) {
           const enriched = JSON.parse(res);
           let newSents = entry.sentences || [];
@@ -397,6 +385,34 @@ export default function LexiconAppV2() {
       } catch (e) { console.error(e); } finally { setIsGeneratingImage(false); }
   };
 
+  // Re-added missing functions
+  const getEtymology = async () => {
+      if (!entry) return;
+      const res = await callGemini(`Etymology of "${entry.word}". Output in Chinese.`, false);
+      if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
+  };
+
+  const handleChatSubmit = async () => {
+      if (!chatInput || !entry) return;
+      const userMsg: ChatMessage = { role: 'user', text: chatInput, timestamp: Date.now() };
+      setChatMessages(prev => [...prev, userMsg]); setChatInput('');
+      const res = await callGemini(`Context: "${entry.word}". User: "${userMsg.text}". Answer in CN.`, false);
+      if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
+  };
+
+  const handleAutoCluster = async () => {
+      setIsClustering(true);
+      const themes = [...new Set(savedItems.map(i => i.entry.theme))];
+      const res = await callGemini(`Group themes into 6-8 CN categories. JSON { "old": "new" }. Themes: ${JSON.stringify(themes)}`, true);
+      if (res) {
+          const map = JSON.parse(res);
+          const batch = writeBatch(db);
+          savedItems.forEach(i => { if (map[i.entry.theme]) batch.update(doc(db,'vocabulary',i.id), { 'entry.theme': map[i.entry.theme] }); });
+          await batch.commit();
+      }
+      setIsClustering(false);
+  };
+
   const deleteItem = async (id: string) => { if(confirm("Delete?")) await deleteDoc(doc(db, 'vocabulary', id)); };
   const toggleArchive = async (id: string, status: boolean) => updateDoc(doc(db, 'vocabulary', id), { isArchived: !status });
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
@@ -429,7 +445,6 @@ export default function LexiconAppV2() {
                 <div className="bg-indigo-600 text-white p-1 rounded-lg"><Globe size={16} /></div>
                 Polyglot
             </h1>
-            {/* Language Selector Next to Title */}
             <button onClick={() => setIsAutoLang(!isAutoLang)} className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-white text-slate-400 border-slate-200'}`}>
                 {isAutoLang ? "Auto" : "Manual"}
             </button>
@@ -439,7 +454,6 @@ export default function LexiconAppV2() {
                 </select>
             )}
           </div>
-          {/* Hide Import on Mobile */}
           <div className="hidden md:flex items-center gap-2">
              <button onClick={() => alert(JSON.stringify(entry,null,2))} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded"><Code size={16}/></button>
           </div>
@@ -449,7 +463,6 @@ export default function LexiconAppV2() {
           {/* DICTIONARY TAB */}
           {mainTab === 'dictionary' && (
             <div className="h-full flex flex-col md:flex-row md:gap-6 md:p-6 overflow-y-auto overscroll-contain">
-              {/* Input Area */}
               <div className="p-4 md:w-1/3 md:p-0 shrink-0">
                 <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
                    <div className="flex gap-1 mb-2 p-0.5 bg-slate-100 rounded-lg">
@@ -468,7 +481,6 @@ export default function LexiconAppV2() {
                 </div>
               </div>
 
-              {/* Card Display */}
               <div className="flex-1 px-4 pb-20 md:pb-0 md:px-0">
                 {entry ? (
                     <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-300">
@@ -508,7 +520,6 @@ export default function LexiconAppV2() {
                                     </div>
                                 ))}
                              </div>
-                             {/* AI Chat */}
                              <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100">
                                 <div className="flex justify-between mb-2">
                                     <span className="text-[10px] font-bold text-indigo-900 uppercase flex items-center gap-1"><MessageCircle size={12}/> AI Context</span>
@@ -529,7 +540,6 @@ export default function LexiconAppV2() {
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
             <div className="h-full flex flex-col bg-white">
-                {/* Compact Header Row */}
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
                     <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Library size={16} className="text-indigo-600"/> Collection <span className="text-xs text-slate-400 font-normal">({savedItems.filter(i=>!i.isArchived).length})</span></h2>
                     <div className="flex gap-2">
@@ -538,7 +548,6 @@ export default function LexiconAppV2() {
                     </div>
                 </div>
                 
-                {/* Tiny Filters */}
                 <div className="px-4 py-2 border-b border-slate-50 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
                       <select className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded px-1 py-1 outline-none" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Langs</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.flag} {l.code.toUpperCase()}</option>)}</select>
                       <select className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded px-1 py-1 outline-none" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">All Levels</option>{['A1','A2','B1','B2','C1','C2','N1','N2'].map(l=><option key={l} value={l}>{l}</option>)}</select>
