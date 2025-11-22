@@ -16,19 +16,20 @@ import {
 } from 'firebase/firestore';
 
 // --- Global Setup ---
-const apiKey = "AIzaSyCduYjRV9rYIWP7ErLXca0MBljr8LEPyjM";
+// 使用环境变量，不直接暴露 Key
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
 
 // --- Firebase Init (User Config) ---
 const userFirebaseConfig = {
-  apiKey: "AIzaSyAjAY1wpzBIiY3vn6WomIYdnVXPNdzdLiM",
-  authDomain: "polyglot-lexicon.firebaseapp.com",
-  projectId: "polyglot-lexicon",
-  storageBucket: "polyglot-lexicon.firebasestorage.app",
-  messagingSenderId: "993089680528",
-  appId: "1:993089680528:web:8780f94a9ecb7d11e21415"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 let auth: any;
