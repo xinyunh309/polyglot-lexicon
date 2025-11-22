@@ -1,28 +1,23 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Volume2, Copy, BookOpen, Type, RefreshCw, Hash, Globe, 
-  ChevronRight, Save, Calendar, CheckCircle, Layout, Clock,
-  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Loader2, X,
-  Wand2, RotateCcw, Info, Lightbulb, Flame, ChevronLeft, MessageCircle,
-  Upload, Merge, Smartphone, Database, Send, Menu, Eye, EyeOff, FileText,
-  Zap, Image as ImageIcon, Gamepad2, Trash2, AlertTriangle, User as UserIcon,
-  List, Code
+  Volume2, Copy, BookOpen, RefreshCw, Hash, Globe, 
+  ChevronRight, Save, CheckCircle, Loader2, X,
+  Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
+  Upload, Merge, Database, Send, Eye, EyeOff, 
+  Zap, Image as ImageIcon, Gamepad2, Trash2,
+  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, type User 
+  getAuth, signInAnonymously, onAuthStateChanged, type User 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, setDoc, getDoc, onSnapshot, getDocs,
-  query, orderBy, updateDoc, writeBatch, deleteDoc
+  getFirestore, collection, doc, setDoc, onSnapshot, query, updateDoc, writeBatch, deleteDoc
 } from 'firebase/firestore';
 
-// 确保这一行在 LexiconApp 的开头部分
-const [dbLoading, setDbLoading] = useState(true);
-
 // --- Global Setup ---
-const apiKey = "AIzaSyA3opeTV-nPpDyAiCrYttD4uPSZmKMhQ34"; 
-const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
+const apiKey = "AIzaSyCduYjRV9rYIWP7ErLXca0MBljr8LEPyjM";
+const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
 
@@ -46,12 +41,10 @@ const sanitizeData = (data: any): any => {
 };
 
 try {
-    // Force init with user config if not already initialized
     if (!getApps().length) {
         initializeApp(userFirebaseConfig);
     }
     const app = getApp();
-    // We assume if app exists in this context, it's the right one or compatible
     auth = getAuth(app);
     db = getFirestore(app);
     isFirebaseAvailable = true;
@@ -127,7 +120,7 @@ const renderChatText = (text: string) => {
                         return <div key={idx} className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded-lg border border-emerald-100 flex gap-2 items-start"><Lightbulb size={14} className="mt-0.5 shrink-0"/> <span>{renderBoldText(line.replace('Guide:', '').trim())}</span></div>;
                     }
                     if (line.startsWith('AI:')) {
-                         return <div key={idx} className="text-sm leading-relaxed text-slate-800 pl-1">{renderBoldText(line.replace('AI:', '').trim())}</div>;
+                          return <div key={idx} className="text-sm leading-relaxed text-slate-800 pl-1">{renderBoldText(line.replace('AI:', '').trim())}</div>;
                     }
                     return <div key={idx} className="text-sm leading-relaxed">{renderBoldText(line)}</div>;
                 })}
@@ -191,6 +184,7 @@ interface ReviewItem {
   stage: number; 
   nextReviewDate: number; 
   lastReviewedDate: number;
+  addedAt?: number; // made optional for backward compact
   created_at: number; 
   isArchived: boolean; 
 }
@@ -328,7 +322,7 @@ const Tag = ({ icon: Icon, text, colorClass, onClick, title }: { icon?: any, tex
 // --- Main Application ---
 
 export default function LexiconAppV2() {
-  const [user, setUser] = useState<User | null>(null);
+  const [dbLoading, setDbLoading] = useState(true); 
   const [mainTab, setMainTab] = useState<'dictionary' | 'review' | 'library'>('library'); 
   const [inputMode, setInputMode] = useState<'word' | 'text' | 'import'>('word');
   const [currentLang, setCurrentLang] = useState<Language>('en');
@@ -339,7 +333,7 @@ export default function LexiconAppV2() {
   const [generatedEntries, setGeneratedEntries] = useState<VocabEntry[]>([]);
   const [generatedIndex, setGeneratedIndex] = useState(0);
   const [entry, setEntry] = useState<VocabEntry | null>(null);
-  
+   
   // UI States
   const [inputWord, setInputWord] = useState('');
   const [inputText, setInputText] = useState('');
@@ -349,7 +343,7 @@ export default function LexiconAppV2() {
   const [isFigurativeMode, setIsFigurativeMode] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
-  
+   
   // Story & Chat & Image
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
@@ -360,10 +354,10 @@ export default function LexiconAppV2() {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
-  // Review Logic
+  // Review Logic 
   const [reviewQueue, setReviewQueue] = useState<ReviewItem[]>([]);
-  const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
   const [isReviewFlipped, setIsReviewFlipped] = useState(false); 
+  const [reviewFilterLang, setReviewFilterLang] = useState<Language | 'all'>('all'); // NEW: Review Lang Filter
 
   // Filters
   const [filters, setFilters] = useState({ lang: 'all', level: 'all', pos: 'all', theme: 'all' });
@@ -379,22 +373,18 @@ export default function LexiconAppV2() {
             await signInAnonymously(auth);
         } catch (error) {
             console.error("Auth failed, relying on open DB rules", error);
-            setUser({ uid: 'guest_user', isAnonymous: true } as User);
         }
     };
     initAuth();
-    return onAuthStateChanged(auth, (u) => {
-        if (u) setUser(u);
-        // else initAuth() is handled by mount
+    return onAuthStateChanged(auth, (u: User | null) => {
+       // Auth state
     });
   }, []);
-// --- Data Sync (Safe Mode) ---
+
+// --- Data Sync ---
   useEffect(() => {
-    // 1. 安全检查：如果没有连接数据库，直接不执行，防止崩
     if (!db) return;
 
-    // 2. 简单粗暴：不加任何过滤条件，先把所有数据抓回来再说
-    // (去掉了 orderBy，防止因为缺少索引导致 App 打不开)
     const q = query(collection(db, 'vocabulary')); 
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -402,52 +392,51 @@ export default function LexiconAppV2() {
       
       snapshot.forEach(doc => {
           const rawData = doc.data();
-          
-          // 3. 数据清洗：确保关键字段存在
-          // 不管库里是 created_at 还是 addedAt，都统一成 addedAt
           const realTime = rawData.addedAt || rawData.created_at || Date.now();
-
           const cleanItem: any = {
              id: doc.id,
              ...rawData,
              addedAt: realTime, 
-             // 确保 entry 存在，防止读取 entry.word 时白屏
              entry: rawData.entry || { word: "Error Data", sentences: [] } 
           };
-          
-          // 补全 entry 里的数组，防止 undefined 报错
           if (!cleanItem.entry.sentences) cleanItem.entry.sentences = [];
           if (!cleanItem.entry.synonyms) cleanItem.entry.synonyms = [];
           if (!cleanItem.entry.antonyms) cleanItem.entry.antonyms = [];
           if (!cleanItem.entry.crossRefs) cleanItem.entry.crossRefs = [];
-
           items.push(cleanItem);
       });
 
-      // 4. 本地排序：在电脑上排好序再显示 (最新导入的排前面)
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
-
-      console.log(`成功加载 ${items.length} 个单词`);
       setSavedItems(items);
       setDbLoading(false);
       
     }, (err) => {
       console.error("Sync Error:", err);
-      // 如果出错，不要让 App 崩溃，只停止加载动画
       setDbLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
+  // Refresh Queue with Language Filter
+  const refreshReviewQueue = () => {
+      const now = Date.now();
+      let due = savedItems
+        .filter(item => !item.isArchived && (item.nextReviewDate || 0) <= now);
+      
+      // Apply Language Filter
+      if (reviewFilterLang !== 'all') {
+          due = due.filter(item => item.entry.lang === reviewFilterLang);
+      }
+
+      due.sort((a,b) => a.nextReviewDate - b.nextReviewDate);
+      setReviewQueue(due);
+  };
+
+  // Initial Load or when savedItems/filter changes
   useEffect(() => {
-    const now = Date.now();
-    setReviewQueue(
-        savedItems
-        .filter(item => !item.isArchived && (item.nextReviewDate || 0) <= now)
-        .sort((a,b) => a.nextReviewDate - b.nextReviewDate)
-    );
-  }, [savedItems]);
+      refreshReviewQueue();
+  }, [savedItems.length, reviewFilterLang]);
 
   useEffect(() => {
     if (generatedEntries.length > 0) {
@@ -475,7 +464,7 @@ ${sentencesStr}
 >[[${e.source || 'polyglot-app'}]]`;
       }).join('\n\n');
 
-     setGeneratedMarkdown(mdOutput);
+      setGeneratedMarkdown(mdOutput);
   }, [generatedEntries]);
 
   const copyToClipboard = () => {
@@ -492,15 +481,13 @@ ${sentencesStr}
       await updateDoc(doc(db, 'vocabulary', id), { isArchived: !currentStatus });
   };
 
-// --- 📂 文件上传导入功能 (专业版) ---
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 再次确认
     if (!confirm(`确定要导入文件 "${file.name}" 吗？`)) return;
 
-    setIsGenerating(true); // 显示加载圈
+    setIsGenerating(true); 
     
     const reader = new FileReader();
     
@@ -510,18 +497,13 @@ ${sentencesStr}
         const rawData = JSON.parse(text);
         const items = Array.isArray(rawData) ? rawData : [rawData];
         
-        console.log(`开始导入 ${items.length} 条数据...`);
-        
         let successCount = 0;
         const batchNow = Date.now();
 
-        // 循环上传 (使用 Promise.all 并发太快可能会被 Firebase 限制，所以我们用 for 循环一条条稳稳地传)
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
-          
-          // 构造标准结构
           const newDoc = {
-            id: `import-${batchNow}-${i}`, // 确保ID唯一
+            id: `import-${batchNow}-${i}`, 
             entry: {
               word: item.word || "Unknown",
               lang: item.lang || "fr",
@@ -534,7 +516,6 @@ ${sentencesStr}
               morphology: item.morphology || "",
               level: item.level || "B2",
               theme: item.theme || "General",
-              // 保护数组字段
               sentences: Array.isArray(item.sentences) ? item.sentences : [],
               synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
               antonyms: Array.isArray(item.antonyms) ? item.antonyms : [],
@@ -548,11 +529,8 @@ ${sentencesStr}
             isArchived: false
           };
 
-          // 写入数据库
           await setDoc(doc(db, "vocabulary", newDoc.id), newDoc);
           successCount++;
-          
-          // 每处理 10 条在控制台报个数，让你知道进度
           if (successCount % 10 === 0) console.log(`已导入 ${successCount}/${items.length}`);
         }
 
@@ -564,7 +542,6 @@ ${sentencesStr}
         alert("❌ 文件解析失败！请确保你上传的是标准的 JSON 格式文件。");
       } finally {
         setIsGenerating(false);
-        // 清空 input 防止重复上传同一个文件不触发 onchange
         event.target.value = ''; 
       }
     };
@@ -576,7 +553,6 @@ ${sentencesStr}
       if(window.confirm("Permanently delete this card?")) {
           try {
               await deleteDoc(doc(db, 'vocabulary', id));
-              // Force UI update if needed, though onSnapshot should handle it
           } catch (err) {
               console.error(err);
               alert("Error deleting: " + err);
@@ -616,6 +592,20 @@ ${sentencesStr}
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
+    
+    // FIX: Check Library First!
+    if (inputMode === 'word') {
+        const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === target.toLowerCase());
+        if (existingItem) {
+            setEntry(existingItem.entry);
+            setGeneratedEntries([existingItem.entry]);
+            setGeneratedIndex(0);
+            setMainTab('dictionary');
+            setInputWord(''); // Clear input on success
+            return;
+        }
+    }
+
     setIsGenerating(true);
     setMainTab('dictionary');
 
@@ -892,7 +882,8 @@ ${sentencesStr}
         stage: 0, 
         nextReviewDate: Date.now(), 
         lastReviewedDate: Date.now(),
-        created_at: now, 
+        created_at: now,
+        addedAt: now, // Ensure addedAt is set
         isArchived: false
       };
       try {
@@ -902,9 +893,13 @@ ${sentencesStr}
     }
   };
 
+  // Simplified Review Action to prevent jumping
   const handleReviewAction = async (remember: boolean) => {
-      const item = reviewQueue[currentReviewIndex];
+      const item = reviewQueue[0]; 
       if (!item) return; 
+
+      setReviewQueue(prev => prev.slice(1)); 
+      setIsReviewFlipped(false);
 
       try {
           if (remember) {
@@ -920,15 +915,12 @@ ${sentencesStr}
                 stage: 0
             });
           }
-      } catch(e) { console.error(e); }
+      } catch(e) { 
+        console.error(e); 
+      }
 
-      setIsReviewFlipped(false);
-      if (currentReviewIndex < reviewQueue.length - 1) {
-          setCurrentReviewIndex(prev => prev + 1);
-      } else {
-          alert("Review Session Complete!");
+      if (reviewQueue.length <= 1) {
           setMainTab('library');
-          setCurrentReviewIndex(0);
       }
   };
 
@@ -955,8 +947,12 @@ ${sentencesStr}
     setShowStoryModal(true);
     const wordList = words.slice(0, 8).map(w => `${w.word} (${w.meaning})`).join(', ');
     const prompt = `Create a mnemonic story with: ${wordList}. Return JSON: { "target_story": "Story in Target Language", "mixed_story": "Story in Chinese with bold keywords" }`;
-    const res = await callGemini(prompt, true);
-    if (res) setStoryContent(JSON.parse(res));
+    const result = await callGemini(prompt, true);
+    if (result) {
+        try {
+             setStoryContent(JSON.parse(result));
+        } catch (e) { console.error(e); }
+    }
     setIsGeneratingStory(false);
   };
 
@@ -1030,6 +1026,12 @@ ${sentencesStr}
   const availablePos = useMemo(() => [...new Set(savedItems.map(i=>i.entry.pos))].sort(), [savedItems]);
   const availableThemes = useMemo(() => [...new Set(savedItems.map(i=>i.entry.theme))].sort(), [savedItems]);
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
+
+  // Helper for Review Intervals
+  const getNextIntervalLabel = (currentStage: number) => {
+    const nextStage = Math.min(currentStage + 1, INTERVALS.length - 1);
+    return `${INTERVALS[nextStage]}d`;
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 md:pb-0 safe-p-b">
@@ -1126,6 +1128,7 @@ ${sentencesStr}
                     <div className="flex items-center justify-center gap-2 text-slate-600 font-medium text-sm">
                         <Database size={14} className={isFirebaseAvailable ? "text-emerald-500" : "text-slate-400"}/> 
                         {isFirebaseAvailable ? 'Cloud Sync Active' : 'Offline / Local'}
+                        {dbLoading && <Loader2 size={14} className="animate-spin text-slate-400"/>}
                     </div>
                 </div>
               </div>
@@ -1340,7 +1343,7 @@ ${sentencesStr}
               </div>
             </div>
           )}
-          
+           
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
@@ -1362,25 +1365,25 @@ ${sentencesStr}
                 
                 {/* Filters */}
                 <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-3 items-center">
-                     <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
-                     <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Languages</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}</select>
-                     <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">All Levels</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
-                     <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">All POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
-                     <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">All Themes</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
-                     
-                     <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset Filters"><RotateCcw size={14}/></button>
+                      <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Languages</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}</select>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">All Levels</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">All POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">All Themes</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
+                      
+                      <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset Filters"><RotateCcw size={14}/></button>
 
-                     <div className="w-px h-6 bg-slate-200 mx-2"></div>
-                     <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><ArrowUpDown size={12}/> Sort:</div>
-                     <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}>
-                         <option value="recent">Recently Added</option>
-                         <option value="review_soon">Review Priority</option>
-                         <option value="level_asc">Level (A-Z)</option>
-                     </select>
+                      <div className="w-px h-6 bg-slate-200 mx-2"></div>
+                      <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><ArrowUpDown size={12}/> Sort:</div>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}>
+                          <option value="recent">Recently Added</option>
+                          <option value="review_soon">Review Priority</option>
+                          <option value="level_asc">Level (A-Z)</option>
+                      </select>
 
-                     <button onClick={()=>setShowArchived(!showArchived)} className={`ml-auto text-xs font-bold px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>
-                        {showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? 'Back to Active' : 'View Archive'}
-                     </button>
+                      <button onClick={()=>setShowArchived(!showArchived)} className={`ml-auto text-xs font-bold px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>
+                         {showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? 'Back to Active' : 'View Archive'}
+                      </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
@@ -1411,12 +1414,20 @@ ${sentencesStr}
           {/* REVIEW TAB (Mobile Optimized) */}
           {mainTab === 'review' && (
              <div className="max-w-4xl mx-auto h-full flex flex-col justify-center pb-10 min-w-0">
-                {reviewQueue.length > 0 && reviewQueue[currentReviewIndex] ? (
+                {reviewQueue.length > 0 && reviewQueue[0] ? (
                     <div className="w-full md:w-[600px] mx-auto min-h-[400px] relative bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden cursor-pointer flex flex-col" onClick={() => setIsReviewFlipped(!isReviewFlipped)}>
                         {/* Status Bar */}
-                        <div className="h-12 bg-slate-50 border-b border-slate-100 flex items-center justify-between px-6 shrink-0">
-                            <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Card {currentReviewIndex + 1} / {reviewQueue.length}</span>
-                            <span className="text-2xl">{FLAGS[reviewQueue[currentReviewIndex].entry.lang]}</span>
+                        <div className="h-14 bg-slate-50 border-b border-slate-100 flex items-center justify-between px-6 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Left: {reviewQueue.length}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
+                                <span className="text-xs font-bold text-slate-400">Filter:</span>
+                                <select className="text-xs font-bold bg-transparent outline-none text-slate-600 border-b border-slate-300 pb-0.5" value={reviewFilterLang} onChange={(e) => setReviewFilterLang(e.target.value as any)}>
+                                    <option value="all">All</option>
+                                    {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.code.toUpperCase()}</option>)}
+                                </select>
+                            </div>
                         </div>
 
                         {/* Main Content Area */}
@@ -1426,27 +1437,36 @@ ${sentencesStr}
                                 <div className="flex flex-col items-center animate-in fade-in w-full">
                                     {/* Font Size Clamp for Mobile */}
                                     <h2 className="font-serif font-bold text-slate-900 mb-8 text-center break-words leading-tight w-full px-4" style={{ fontSize: 'clamp(2rem, 8vw, 4rem)' }}>
-                                        {reviewQueue[currentReviewIndex].entry.word}
+                                        {reviewQueue[0].entry.word}
                                     </h2>
                                     <div onClick={e=>e.stopPropagation()} className="p-4 bg-indigo-50 rounded-full hover:scale-110 transition-transform mb-12">
-                                        <TTSButton text={reviewQueue[currentReviewIndex].entry.word} lang={reviewQueue[currentReviewIndex].entry.lang} size={32}/>
+                                        <TTSButton text={reviewQueue[0].entry.word} lang={reviewQueue[0].entry.lang} size={32}/>
                                     </div>
                                     <p className="text-sm text-slate-400 font-medium flex items-center gap-2 animate-bounce"><RotateCcw size={14}/> Tap to reveal</p>
                                 </div>
                             ) : (
                                 /* BACK */
-                                <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2">
-                                    <h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[currentReviewIndex].entry.word}</h2>
+                                <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full">
+                                    <h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2>
                                     <div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">
-                                        {reviewQueue[currentReviewIndex].entry.meaning}
+                                        {reviewQueue[0].entry.meaning}
                                     </div>
-                                    <div className="w-full space-y-3 mb-4 text-left">
-                                        {(reviewQueue[currentReviewIndex].entry.sentences || []).slice(0,1).map((s, i) => (
-                                            <div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                                <p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p>
-                                                <p className="text-xs text-slate-500">{s.translation}</p>
+                                    <div className="w-full space-y-3 mb-auto text-left">
+                                        {(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (
+                                            <div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3">
+                                                <div className="flex-1">
+                                                    <p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p>
+                                                    <p className="text-xs text-slate-500">{s.translation}</p>
+                                                </div>
+                                                {/* New: TTS for Sentence in Review */}
+                                                <div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div>
                                             </div>
                                         ))}
+                                    </div>
+                                    {/* New: Metadata Footer */}
+                                    <div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium">
+                                        <div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div>
+                                        <div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div>
                                     </div>
                                 </div>
                             )}
@@ -1455,8 +1475,12 @@ ${sentencesStr}
                         {/* Action Footer (Only on Back) */}
                         {isReviewFlipped && (
                             <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0">
-                                <button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2"><X size={18}/> Forgot</button>
-                                <button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2"><Check size={18}/> Remember</button>
+                                <button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm">
+                                    <X size={16}/> Forgot (Reset)
+                                </button>
+                                <button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm">
+                                    <Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})
+                                </button>
                             </div>
                         )}
                     </div>
@@ -1464,8 +1488,11 @@ ${sentencesStr}
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto">
                         <div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div>
                         <h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2>
-                        <p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">Your Review Queue is empty. Great job keeping up with your language goals.</p>
-                        <button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button>
+                        <p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">Your Review Queue is empty.</p>
+                        <div className="flex gap-3 justify-center">
+                            <button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button>
+                            <button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button>
+                        </div>
                     </div>
                 )}
              </div>
