@@ -377,7 +377,7 @@ export default function LexiconAppV2() {
         }
     };
     initAuth();
-    return onAuthStateChanged(auth, (u: User | null) => {
+    return onAuthStateChanged(auth, () => {
        // Auth state
     });
   }, []);
