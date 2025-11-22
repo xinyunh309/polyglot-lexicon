@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'; // 移除了 React 默认引用
+import { useState, useEffect, useMemo } from 'react'; 
 import { 
   BookOpen, RefreshCw, Globe, 
   Save, CheckCircle, Loader2, X,
   Wand2, Lightbulb, MessageCircle,
-  Merge, Send, 
+  Merge, Send, Volume2, // ✅ 补回了 Volume2
   Image as ImageIcon, Trash2,
-  Library, Sparkles, Archive, Check, Code, Calendar // 移除了未使用的图标
+  Library, Sparkles, Archive, Check, Code 
+  // ❌ 删除了 Calendar
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -17,9 +18,9 @@ import {
 
 // --- Global Setup ---
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash"; // ✅ 强制改回 2.5 Flash
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const IMAGEN_MODEL = "imagen-3.0-generate-001";
+const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
 
 // --- Firebase Init ---
 const userFirebaseConfig = {
@@ -131,6 +132,7 @@ const formatPOS = (pos: string): string => {
     if (/[\u4e00-\u9fa5]/.test(pos)) return pos;
     return pos; 
 };
+const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
 
 // --- Types ---
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
@@ -214,6 +216,7 @@ const Tag = ({ icon: Icon, text, colorClass, onClick }: { icon?: any, text: stri
 
 // --- Main Application ---
 export default function LexiconAppV2() {
+  const [dbLoading, setDbLoading] = useState(true); 
   const [mainTab, setMainTab] = useState<'dictionary' | 'review' | 'library'>('library'); 
   const [inputMode, setInputMode] = useState<'word' | 'text' | 'import'>('word');
   const [currentLang, setCurrentLang] = useState<Language>('en');
@@ -229,7 +232,6 @@ export default function LexiconAppV2() {
   const [inputWord, setInputWord] = useState('');
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  // isEnriching deleted, replaced with logic below
   const [isClustering, setIsClustering] = useState(false);
    
   // Story & Chat & Image
@@ -238,6 +240,7 @@ export default function LexiconAppV2() {
   const [storyContent, setStoryContent] = useState<StoryData | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [isChatting, setIsChatting] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
@@ -248,7 +251,8 @@ export default function LexiconAppV2() {
 
   // Filters
   const [filters, setFilters] = useState({ lang: 'all', level: 'all', pos: 'all', theme: 'all' });
-  const [sortMode, setSortMode] = useState<'recent' | 'review_soon' | 'level_asc'>('recent');
+  // ✅ 修复：删除了未使用的 setSortMode
+  const [sortMode] = useState<'recent' | 'review_soon' | 'level_asc'>('recent');
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => { if (!isFirebaseAvailable) return; signInAnonymously(auth).catch(console.error); initAuth(); }, []);
@@ -264,7 +268,7 @@ export default function LexiconAppV2() {
           items.push({ id: doc.id, ...d, addedAt: d.addedAt || d.created_at || Date.now(), entry: d.entry || { word: "Error", sentences: [] } } as any);
       });
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
-      setSavedItems(items); 
+      setSavedItems(items); setDbLoading(false);
     });
   }, []);
 
@@ -326,9 +330,11 @@ export default function LexiconAppV2() {
 
   const handleSmartEnrich = async () => {
       if (!entry) return;
+      // isEnriching variable removed to save space, using direct call logic
       const hasSents = entry.sentences && entry.sentences.length > 0;
       const task = hasSents ? `Add 1 NEW Advanced/Literary sentence. Do NOT delete existing.` : `Add 2 sentences.`;
       const res = await callGemini(`ENRICH "${entry.word}". Current: ${JSON.stringify(entry)} TASK: ${task} Add 5 synonyms, Cross-Lang. Return FULL JSON.`, true);
+      
       if (res) {
           const enriched = JSON.parse(res);
           let newSents = entry.sentences || [];
@@ -385,10 +391,11 @@ export default function LexiconAppV2() {
       } catch (e) { console.error(e); } finally { setIsGeneratingImage(false); }
   };
 
-  // Re-added missing functions
   const getEtymology = async () => {
       if (!entry) return;
+      setIsChatting(true);
       const res = await callGemini(`Etymology of "${entry.word}". Output in Chinese.`, false);
+      setIsChatting(false);
       if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
@@ -396,7 +403,9 @@ export default function LexiconAppV2() {
       if (!chatInput || !entry) return;
       const userMsg: ChatMessage = { role: 'user', text: chatInput, timestamp: Date.now() };
       setChatMessages(prev => [...prev, userMsg]); setChatInput('');
+      setIsChatting(true);
       const res = await callGemini(`Context: "${entry.word}". User: "${userMsg.text}". Answer in CN.`, false);
+      setIsChatting(false);
       if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
@@ -525,7 +534,10 @@ export default function LexiconAppV2() {
                                     <span className="text-[10px] font-bold text-indigo-900 uppercase flex items-center gap-1"><MessageCircle size={12}/> AI Context</span>
                                     <div className="flex gap-1"><button onClick={getEtymology} className="text-[9px] bg-white px-1.5 py-0.5 rounded border border-indigo-100">Etymology</button></div>
                                 </div>
-                                <div className="space-y-2 max-h-32 overflow-y-auto mb-2">{chatMessages.map((m,i)=><div key={i} className={`text-xs p-2 rounded-lg ${m.role==='user'?'bg-indigo-600 text-white self-end':'bg-white text-slate-800 border border-indigo-100'}`}>{renderChatText(m.text)}</div>)}</div>
+                                <div className="space-y-2 max-h-32 overflow-y-auto mb-2">
+                                    {chatMessages.map((m,i)=><div key={i} className={`text-xs p-2 rounded-lg ${m.role==='user'?'bg-indigo-600 text-white self-end':'bg-white text-slate-800 border border-indigo-100'}`}>{renderChatText(m.text)}</div>)}
+                                    {isChatting && <div className="text-center"><Loader2 size={12} className="animate-spin text-indigo-400 inline"/></div>}
+                                </div>
                                 <div className="flex gap-1"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 text-xs p-2 rounded border border-indigo-200" placeholder="Ask AI..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded"><Send size={14}/></button></div>
                              </div>
                         </div>
