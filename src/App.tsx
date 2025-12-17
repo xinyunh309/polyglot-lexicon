@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Zap, Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap // ❌ 删除了未使用的 Play 图标，防止报错
+  Play, Bot, GraduationCap, Download, User 
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -21,12 +21,13 @@ import {
 // ==========================================
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-// 强制使用 2.5 Flash
-const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts";
-const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
-// Firebase Config (Environment Variables)
+// ✅ 严格按照你的源代码配置模型
+const GEMINI_MODEL = "gemini-2.5-flash"; 
+const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // 使用你指定的 TTS 模型
+const IMAGEN_MODEL = "imagen-4.0-fast-generate-001";   // 使用你指定的 Imagen 模型
+
+// Firebase Config
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -40,7 +41,7 @@ let auth: any;
 let db: any;
 let isFirebaseAvailable = false;
 
-// Helper to clean undefined fields for Firestore
+// Data Helper
 const sanitizeData = (data: any): any => {
     return JSON.parse(JSON.stringify(data));
 };
@@ -63,9 +64,10 @@ const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
 // ==========================================
-// 2. 工具函数 (Utilities)
+// 2. 核心工具函数 (Utilities)
 // ==========================================
 
+// Base64 PCM 转 WAV (用于处理 Google TTS 的原生音频流)
 const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   try {
       const binaryString = atob(base64PCM);
@@ -114,38 +116,24 @@ const renderBoldText = (text: string) => {
 
 const renderChatText = (text: string) => {
     if (!text) return null;
-    
     if (text.includes('Context:') || text.includes('Guide:')) {
         const lines = text.split('\n').filter(l => l.trim());
         return (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
                 {lines.map((line, idx) => {
-                    if (line.startsWith('Context:')) {
-                        return <div key={idx} className="text-xs font-bold text-blue-600 bg-blue-50 p-2 rounded-lg border border-blue-100">{line.replace('Context:', '').trim()}</div>;
-                    }
-                    if (line.startsWith('Guide:')) {
-                        return <div key={idx} className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded-lg border border-emerald-100 flex gap-2 items-start"><Lightbulb size={14} className="mt-0.5 shrink-0"/> <span>{renderBoldText(line.replace('Guide:', '').trim())}</span></div>;
-                    }
-                    if (line.startsWith('AI:')) {
-                          return <div key={idx} className="text-sm leading-relaxed text-slate-800 pl-1">{renderBoldText(line.replace('AI:', '').trim())}</div>;
-                    }
-                    return <div key={idx} className="text-sm leading-relaxed">{renderBoldText(line)}</div>;
+                    if (line.startsWith('Context:')) return <div key={idx} className="text-[10px] font-bold text-blue-600 bg-blue-50 p-1.5 rounded border border-blue-100">{line.replace('Context:', '').trim()}</div>;
+                    if (line.startsWith('Guide:')) return <div key={idx} className="text-[10px] text-emerald-700 bg-emerald-50 p-1.5 rounded border border-emerald-100 flex gap-2 items-start"><Lightbulb size={12} className="mt-0.5 shrink-0"/> <span>{renderBoldText(line.replace('Guide:', '').trim())}</span></div>;
+                    if (line.startsWith('AI:')) return <div key={idx} className="text-xs leading-relaxed text-slate-800 pl-1">{renderBoldText(line.replace('AI:', '').trim())}</div>;
+                    return <div key={idx} className="text-xs leading-relaxed">{renderBoldText(line)}</div>;
                 })}
             </div>
         );
     }
-
     let clean = text.replace(/#+\s/g, '').replace(/```/g, ''); 
     return renderBoldText(clean);
 };
 
-const POS_MAP: Record<string, string> = {
-    'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 
-    'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 
-    'phrase': '短语', 'idiom': '习语', 'expression': '表达',
-    'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词'
-};
-
+const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
     const lower = pos.toLowerCase().trim();
@@ -157,11 +145,11 @@ const formatPOS = (pos: string): string => {
     return pos; 
 };
 
-const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
+// ==========================================
+// 3. 核心类型定义 (Types)
+// ==========================================
 
-// ==========================================
-// 3. 核心类型 (Types)
-// ==========================================
+const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
 
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
 
@@ -243,6 +231,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
     
+    // 检查缓存
     const cacheKey = `${lang}:${text.substring(0, 50)}`; 
     if (audioCache.has(cacheKey)) {
       playAudio(audioCache.get(cacheKey)!);
@@ -254,6 +243,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       const langLabel = LANGUAGES.find(l => l.code === lang)?.label || "Target Language";
       const prompt = `Say in ${langLabel}: ${text}`;
 
+      // 使用你指定的 GEMINI_TTS_MODEL (gemini-2.5-pro-preview-tts)
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
         {
@@ -268,7 +258,12 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
           }),
         }
       );
-      if (!response.ok) throw new Error("Gemini TTS failed");
+
+      if (!response.ok) {
+         const err = await response.text();
+         throw new Error(`TTS API Failed: ${response.status} ${err}`);
+      }
+
       const data = await response.json();
       const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (audioData) {
@@ -276,12 +271,13 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
         if (wavUrl) {
             audioCache.set(cacheKey, wavUrl); 
             playAudio(wavUrl);
-        } else {
-             throw new Error("Audio conversion failed");
         }
-      } else throw new Error("No audio data");
+      } else {
+        throw new Error("No audio data");
+      }
     } catch (error) {
       console.warn("TTS Fallback:", error);
+      // Fallback 浏览器原生 TTS
       const u = new SpeechSynthesisUtterance(text);
       const lConfig = LANGUAGES.find(la => la.code === lang);
       u.lang = lConfig?.voiceCode || 'en-US';
@@ -309,7 +305,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       onClick={(e) => { e.stopPropagation(); playGeminiTTS(); }}
       disabled={isLoading}
       className={`flex items-center gap-2 p-2 rounded-full transition-colors ${isPlaying ? 'text-indigo-600 bg-indigo-50' : isLoading ? 'text-slate-400 bg-slate-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-      title={isLoading ? "Loading AI Audio..." : "Play Audio"}
+      title={isLoading ? "Loading Audio..." : "Play Audio"}
     >
       {isLoading ? <Loader2 size={size} className="animate-spin" /> : <Volume2 size={size} className={isPlaying ? "animate-pulse" : ""} />}
       {label && <span className="text-xs font-bold uppercase">{label}</span>}
@@ -373,6 +369,11 @@ export default function App() {
   const [playgroundChat, setPlaygroundChat] = useState<ChatMessage[]>([]);
   const [playgroundUserMsg, setPlaygroundUserMsg] = useState('');
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
+  
+  // ✅ 新增：Playground 音频状态 (性别 & 下载)
+  const [ttsGender, setTtsGender] = useState<'female' | 'male'>('female');
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+
   const playgroundEndRef = useRef<HTMLDivElement>(null);
 
   // Review Logic 
@@ -390,86 +391,49 @@ export default function App() {
   useEffect(() => {
     if (!isFirebaseAvailable) return;
     const initAuth = async () => {
-        try {
-            await signInAnonymously(auth);
-        } catch (error) {
-            console.error("Auth failed, relying on open DB rules", error);
-        }
+        try { await signInAnonymously(auth); } catch (error) { console.error("Auth error", error); }
     };
     initAuth();
-    return onAuthStateChanged(auth, () => {
-       // Auth state listener
-    });
+    return onAuthStateChanged(auth, () => { });
   }, []);
 
   // --- Data Sync ---
   useEffect(() => {
     if (!db) return;
-
     const q = query(collection(db, 'vocabulary')); 
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
       const items: ReviewItem[] = [];
-      
       snapshot.forEach(doc => {
           const rawData = doc.data();
           const cleanItem: any = {
-             id: doc.id,
-             ...rawData,
-             addedAt: rawData.addedAt || rawData.created_at || Date.now(), 
+             id: doc.id, ...rawData, addedAt: rawData.addedAt || rawData.created_at || Date.now(), 
              entry: rawData.entry || { word: "Error Data", sentences: [] } 
           };
           if (!cleanItem.entry.sentences) cleanItem.entry.sentences = [];
-          if (!cleanItem.entry.synonyms) cleanItem.entry.synonyms = [];
-          if (!cleanItem.entry.antonyms) cleanItem.entry.antonyms = [];
-          if (!cleanItem.entry.crossRefs) cleanItem.entry.crossRefs = [];
           items.push(cleanItem);
       });
-
       items.sort((a: any, b: any) => b.addedAt - a.addedAt);
-      setSavedItems(items);
-      setDbLoading(false);
-      
-    }, (err) => {
-      console.error("Sync Error:", err);
-      setDbLoading(false);
+      setSavedItems(items); setDbLoading(false);
     });
-
-    return () => unsubscribe();
   }, []);
 
-  // Refresh Queue with Language Filter
   const refreshReviewQueue = () => {
       const now = Date.now();
-      let due = savedItems
-        .filter(item => !item.isArchived && (item.nextReviewDate || 0) <= now);
-      
-      // Apply Language Filter
-      if (reviewFilterLang !== 'all') {
-          due = due.filter(item => item.entry.lang === reviewFilterLang);
-      }
-
+      let due = savedItems.filter(item => !item.isArchived && (item.nextReviewDate || 0) <= now);
+      if (reviewFilterLang !== 'all') due = due.filter(item => item.entry.lang === reviewFilterLang);
       due.sort((a,b) => a.nextReviewDate - b.nextReviewDate);
       setReviewQueue(due);
   };
-
-  useEffect(() => {
-      refreshReviewQueue();
-  }, [savedItems.length, reviewFilterLang]);
+  useEffect(() => { refreshReviewQueue(); }, [savedItems.length, reviewFilterLang]);
 
   useEffect(() => {
     if (generatedEntries.length > 0) {
-      setEntry(generatedEntries[generatedIndex]);
-      setChatMessages([]);
-      setGeneratedImage(null); 
-      setShowMarkdown(false);
+      setEntry(generatedEntries[generatedIndex]); setChatMessages([]); setGeneratedImage(null); setShowMarkdown(false);
     }
   }, [generatedIndex, generatedEntries]);
 
-  // Markdown Aggregation
   useEffect(() => {
       if (generatedEntries.length === 0) return;
-      
       const mdOutput = generatedEntries.map(e => {
           const sentencesStr = e.sentences?.map(s => ` • ${s.type ? `[${s.type}] ` : ''}${s.target} ${s.translation}`).join('\n') || '';
           return `---
@@ -482,143 +446,182 @@ ${sentencesStr}
  • 反义词: ${e.antonyms?.join(', ')}
 >[[${e.source || 'polyglot-app'}]]`;
       }).join('\n\n');
-
       setGeneratedMarkdown(mdOutput);
   }, [generatedEntries]);
 
-  // Playground Scroll
-  useEffect(() => {
-    playgroundEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [playgroundChat]);
+  useEffect(() => { playgroundEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [playgroundChat]);
 
-  const copyToClipboard = () => {
-      if (!generatedMarkdown) return;
-      navigator.clipboard.writeText(generatedMarkdown);
-  };
-
-  const handleTagJump = (type: 'lang' | 'level' | 'pos' | 'theme', value: string) => {
-    setFilters(prev => ({ ...prev, [type]: value }));
-    setMainTab('library');
-  };
-
-  const toggleArchive = async (id: string, currentStatus: boolean) => {
-      await updateDoc(doc(db, 'vocabulary', id), { isArchived: !currentStatus });
-  };
+  const copyToClipboard = () => { if (generatedMarkdown) navigator.clipboard.writeText(generatedMarkdown); };
+  const handleTagJump = (type: 'lang' | 'level' | 'pos' | 'theme', value: string) => { setFilters(prev => ({ ...prev, [type]: value })); setMainTab('library'); };
+  const toggleArchive = async (id: string, currentStatus: boolean) => { await updateDoc(doc(db, 'vocabulary', id), { isArchived: !currentStatus }); };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     if (!confirm(`确定要导入文件 "${file.name}" 吗？`)) return;
-
     setIsGenerating(true); 
-    
     const reader = new FileReader();
-    
     reader.onload = async (e) => {
       try {
         const text = e.target?.result as string;
         const rawData = JSON.parse(text);
         const items = Array.isArray(rawData) ? rawData : [rawData];
-        
         let successCount = 0;
         const batchNow = Date.now();
-
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           const newDoc = {
-            id: `import-${batchNow}-${i}`, 
-            entry: {
-              word: item.word || "Unknown",
-              lang: item.lang || "fr",
-              pos: item.pos || "未知",
-              gender: item.gender || "",
-              pronunciation: item.pronunciation || "",
-              meaning: item.meaning || "",
-              idiom: item.idiom || "", 
-              idiomMeaning: item.idiomMeaning || "",
-              morphology: item.morphology || "",
-              level: item.level || "B2",
-              theme: item.theme || "General",
-              sentences: Array.isArray(item.sentences) ? item.sentences : [],
-              synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
-              antonyms: Array.isArray(item.antonyms) ? item.antonyms : [],
-              crossRefs: Array.isArray(item.crossRefs) ? item.crossRefs : [],
-              source: "Batch File Import"
-            },
-            stage: 0,
-            addedAt: batchNow,
-            lastReviewedDate: batchNow,
-            nextReviewDate: batchNow,
-            isArchived: false
+            id: `import-${batchNow}-${i}`, entry: { ...item, source: "Batch File Import" }, stage: 0, addedAt: batchNow, lastReviewedDate: batchNow, nextReviewDate: batchNow, isArchived: false
           };
-
           await setDoc(doc(db, "vocabulary", newDoc.id), newDoc);
           successCount++;
-          if (successCount % 10 === 0) console.log(`已导入 ${successCount}/${items.length}`);
         }
-
-        alert(`✅ 导入成功！共处理了 ${successCount} 条单词。\n格式已自动修正。`);
+        alert(`✅ 导入成功！共处理了 ${successCount} 条单词。`);
         window.location.reload();
-
-      } catch (error) {
-        console.error(error);
-        alert("❌ 文件解析失败！请确保你上传的是标准的 JSON 格式文件。");
-      } finally {
-        setIsGenerating(false);
-        event.target.value = ''; 
-      }
+      } catch (error) { alert("文件解析失败！"); } finally { setIsGenerating(false); event.target.value = ''; }
     };
-
     reader.readAsText(file);
   };
+
   const deleteItem = async (e: React.MouseEvent, id: string) => {
       e.stopPropagation(); 
       if(window.confirm("Permanently delete this card?")) {
-          try {
-              await deleteDoc(doc(db, 'vocabulary', id));
-          } catch (err) {
-              console.error(err);
-              alert("Error deleting: " + err);
-          }
+          try { await deleteDoc(doc(db, 'vocabulary', id)); } catch (err) { alert("Error deleting: " + err); }
       }
   };
 
-  // --- Logic: AI ---
+  // --- AI Logic (Basic) ---
   const callGemini = async (prompt: string, isJson: boolean = false) => {
     try {
       if (requestCache.has(prompt)) return requestCache.get(prompt);
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ],
-            generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
-          }),
-        }
-      );
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], safetySettings: [{ category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }], generationConfig: isJson ? { responseMimeType: "application/json" } : undefined })
+      });
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const data = await response.json();
       let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (isJson && text) text = text.replace(/```json\n?|```/g, '').trim();
-      
       if (text) requestCache.set(prompt, text); 
       return text;
-    } catch (error) {
-      console.error("Gemini API Error:", error);
-      return null;
+    } catch (error) { console.error("Gemini API Error:", error); return null; }
+  };
+
+  // --- Playground Logic (RESTORED FULLY) ---
+  const handlePlaygroundChat = async () => {
+    if (!playgroundUserMsg.trim()) return;
+
+    const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
+    const newHistory = [...playgroundChat, userMsg];
+    setPlaygroundChat(newHistory);
+    setPlaygroundUserMsg('');
+    setIsPlaygroundChatting(true);
+
+    const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
+    let systemPrompt = "";
+    
+    // ✅ RESTORED FULL PROMPTS FROM AI STUDIO
+    if (playgroundMode === 'learning') {
+        // Mode A: Default Learning
+        systemPrompt = `
+            You are a helpful language tutor for ${langLabel}.
+            The user provided this context text: "${playgroundInput.substring(0, 500)}...".
+            
+            Goal: Engage in a natural conversation about this text or topic.
+            - Correct any major grammar mistakes gently in your response.
+            - Keep the conversation flowing.
+            - Respond in ${langLabel} primarily, but provide Chinese hints if the user seems stuck or asks.
+        `;
+    } else {
+        // Mode B: Reinforcement
+        // Get random words from library for this language
+        const validWords = savedItems
+            .filter(i => i.entry.lang === playgroundLang)
+            .map(i => i.entry.word);
+        
+        const randomWords = validWords.sort(() => 0.5 - Math.random()).slice(0, 5);
+        const wordList = randomWords.join(', ');
+
+        systemPrompt = `
+            You are a strict language tutor for ${langLabel}.
+            
+            GOAL: Help the user practice these specific words from their vocabulary list: [ ${wordList || "No specific words found, just chat"} ].
+            
+            INSTRUCTIONS:
+            1. Ask a question related to the input text: "${playgroundInput.substring(0, 300)}...".
+            2. TRY to guide the user to use one of the target words in their answer.
+            3. If they use a target word correctly, praise them.
+            4. Respond in ${langLabel}.
+        `;
+    }
+
+    const historyText = newHistory.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
+    const fullPrompt = `${systemPrompt}\n\nConversation History:\n${historyText}\n\nAI Response:`;
+
+    const response = await callGemini(fullPrompt);
+    setIsPlaygroundChatting(false);
+
+    if (response) {
+        setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
     }
   };
 
+  // ✅ Playground Audio (Play & Download with Gender)
+  const handlePlaygroundAudio = async (action: 'play' | 'download') => {
+      if (!playgroundInput.trim()) return;
+      setIsProcessingAudio(true);
+      
+      try {
+          const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
+          // 映射性别声音
+          const voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir'; 
+          
+          const prompt = `Say in ${langLabel}: ${playgroundInput}`;
+          
+          // 使用 GEMINI_TTS_MODEL (gemini-2.5-pro-preview-tts)
+          const response = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+              {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      contents: [{ parts: [{ text: prompt }] }],
+                      generationConfig: { 
+                          responseModalities: ["AUDIO"], 
+                          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                      }
+                  }),
+              }
+          );
+
+          if (!response.ok) throw new Error("Audio generation failed");
+          const data = await response.json();
+          const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          
+          if (audioData) {
+              const wavUrl = pcmToWav(audioData);
+              if (action === 'play') {
+                  new Audio(wavUrl).play();
+              } else {
+                  // Download Logic
+                  const link = document.createElement('a');
+                  link.href = wavUrl;
+                  // Compatible WAV format
+                  link.download = `polyglot_${playgroundLang}_${ttsGender}_${Date.now()}.wav`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+              }
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Audio action failed. Please check network/quota or model availability.");
+      } finally {
+          setIsProcessingAudio(false);
+      }
+  };
+
+  // --- Dictionary AI Logic (Restored Full Prompts) ---
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
@@ -744,65 +747,6 @@ ${sentencesStr}
         setEntry(validEntries[0]);
         if (validEntries[0]?.lang) setCurrentLang(validEntries[0].lang as Language);
       } catch (e) { alert("Failed to parse AI response."); }
-    }
-  };
-
-  // --- Playground Logic (RESTORED FULLY) ---
-  const handlePlaygroundChat = async () => {
-    if (!playgroundUserMsg.trim()) return;
-
-    const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
-    const newHistory = [...playgroundChat, userMsg];
-    setPlaygroundChat(newHistory);
-    setPlaygroundUserMsg('');
-    setIsPlaygroundChatting(true);
-
-    const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
-    let systemPrompt = "";
-    
-    // ✅ RESTORED FULL PROMPTS FROM AI STUDIO
-    if (playgroundMode === 'learning') {
-        // Mode A: Default Learning
-        systemPrompt = `
-            You are a helpful language tutor for ${langLabel}.
-            The user provided this context text: "${playgroundInput.substring(0, 500)}...".
-            
-            Goal: Engage in a natural conversation about this text or topic.
-            - Correct any major grammar mistakes gently in your response.
-            - Keep the conversation flowing.
-            - Respond in ${langLabel} primarily, but provide Chinese hints if the user seems stuck or asks.
-        `;
-    } else {
-        // Mode B: Reinforcement
-        // Get random words from library for this language
-        const validWords = savedItems
-            .filter(i => i.entry.lang === playgroundLang)
-            .map(i => i.entry.word);
-        
-        const randomWords = validWords.sort(() => 0.5 - Math.random()).slice(0, 5);
-        const wordList = randomWords.join(', ');
-
-        systemPrompt = `
-            You are a strict language tutor for ${langLabel}.
-            
-            GOAL: Help the user practice these specific words from their vocabulary list: [ ${wordList || "No specific words found, just chat"} ].
-            
-            INSTRUCTIONS:
-            1. Ask a question related to the input text: "${playgroundInput.substring(0, 300)}...".
-            2. TRY to guide the user to use one of the target words in their answer.
-            3. If they use a target word correctly, praise them.
-            4. Respond in ${langLabel}.
-        `;
-    }
-
-    const historyText = newHistory.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
-    const fullPrompt = `${systemPrompt}\n\nConversation History:\n${historyText}\n\nAI Response:`;
-
-    const response = await callGemini(fullPrompt);
-    setIsPlaygroundChatting(false);
-
-    if (response) {
-        setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
     }
   };
 
@@ -1092,6 +1036,7 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
+  // ✅ 复活的 handleGenerateImage (兼容 Imagen 和 Pollinations)
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
@@ -1099,6 +1044,7 @@ ${sentencesStr}
       try {
           const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
           
+          // 尝试调用 Imagen (如果你的 Key 有权限)
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, 
             { 
@@ -1111,19 +1057,30 @@ ${sentencesStr}
             }
           );
           
-          if (!response.ok) throw new Error(`Img Gen Failed: ${response.status}`);
-          
-          const data = await response.json();
-          if (data.predictions?.[0]?.bytesBase64Encoded) {
-              setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
+          if (!response.ok) {
+              // ❌ 如果 Imagen 失败 (403/404)，自动切换到 Pollinations (免费)
+              console.warn("Imagen failed, trying Pollinations...");
+              const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
+              // 预加载检查
+              const img = new Image();
+              img.src = pollinationsUrl;
+              img.onload = () => {
+                  setGeneratedImage(pollinationsUrl);
+                  setIsGeneratingImage(false);
+              };
           } else {
-              alert("Image API returned no data. (Account might not have Imagen permission)");
+             // ✅ 如果 Imagen 成功
+             const data = await response.json();
+             if (data.predictions?.[0]?.bytesBase64Encoded) {
+                 setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
+             }
+             setIsGeneratingImage(false);
           }
       } catch (e) { 
-          console.error(e);
-          alert("Image generation failed. Check console for details."); 
-      } finally { 
-          setIsGeneratingImage(false); 
+          // 最后的保底
+          const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
+          setGeneratedImage(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`);
+          setIsGeneratingImage(false);
       }
   };
 
@@ -1308,7 +1265,7 @@ ${sentencesStr}
                                      </div>
                                      
                                      <div className="relative">
-                                         {/* 字体大小修复：缩小以适应移动端，使用 clamp */}
+                                         {/* Font Size Clamp for Mobile */}
                                          <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words hyphens-auto w-full" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}>{entry.word}</h2>
                                          {entry.morphology && (<div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold uppercase rounded border border-purple-200"><Zap size={10} className="fill-purple-500"/> {entry.morphology}</div>)}
                                      </div>
@@ -1370,7 +1327,19 @@ ${sentencesStr}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
                     <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2><select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}</select></div>
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
-                    <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-100"><div className="flex-1 text-xs text-slate-500 font-medium">Ready to practice? Use the buttons to listen or start a chat session.</div><TTSButton text={playgroundInput} lang={playgroundLang} label="Read Aloud" size={20}/></div>
+                    
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                        {/* Gender Toggle */}
+                        <div className="flex bg-white p-1 rounded-lg border border-slate-200">
+                            <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
+                            <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
+                        </div>
+                        {/* Actions */}
+                        <div className="flex items-center gap-2">
+                            <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-2 p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50" title="Play Audio">{isProcessingAudio ? <Loader2 size={18} className="animate-spin"/> : <Volume2 size={18}/>}</button>
+                            <button onClick={()=>handlePlaygroundAudio('download')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-2 p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50" title="Download Audio">{isProcessingAudio ? <Loader2 size={18} className="animate-spin"/> : <Download size={18}/>}</button>
+                        </div>
+                    </div>
                 </div>
                 {/* Right: AI Chat */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
