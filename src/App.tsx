@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Zap, Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Play, Bot, GraduationCap, Download, User 
+  Bot, GraduationCap, Download, User // ✅ 已移除 Play，新增 Download, User
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -17,15 +17,15 @@ import {
 } from 'firebase/firestore';
 
 // ==========================================
-// 1. 全局配置 (Configuration)
+// 1. 全局配置 & 模型定义 (Configuration)
 // ==========================================
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// ✅ 严格按照你的源代码配置模型
+// ✅ 严格按照你的要求配置模型版本
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // 使用你指定的 TTS 模型
-const IMAGEN_MODEL = "imagen-4.0-fast-generate-001";   // 使用你指定的 Imagen 模型
+const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // 恢复 TTS Preview
+const IMAGEN_MODEL = "imagen-4.0-fast-generate-001";   // 升级 Imagen 4.0
 
 // Firebase Config
 const userFirebaseConfig = {
@@ -67,7 +67,7 @@ const requestCache = new Map<string, string>();
 // 2. 核心工具函数 (Utilities)
 // ==========================================
 
-// Base64 PCM 转 WAV (用于处理 Google TTS 的原生音频流)
+// Base64 PCM -> WAV Converter (Fixed Header)
 const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   try {
       const binaryString = atob(base64PCM);
@@ -231,7 +231,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
     
-    // 检查缓存
     const cacheKey = `${lang}:${text.substring(0, 50)}`; 
     if (audioCache.has(cacheKey)) {
       playAudio(audioCache.get(cacheKey)!);
@@ -243,7 +242,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       const langLabel = LANGUAGES.find(l => l.code === lang)?.label || "Target Language";
       const prompt = `Say in ${langLabel}: ${text}`;
 
-      // 使用你指定的 GEMINI_TTS_MODEL (gemini-2.5-pro-preview-tts)
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
         {
@@ -277,7 +275,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       }
     } catch (error) {
       console.warn("TTS Fallback:", error);
-      // Fallback 浏览器原生 TTS
       const u = new SpeechSynthesisUtterance(text);
       const lConfig = LANGUAGES.find(la => la.code === lang);
       u.lang = lConfig?.voiceCode || 'en-US';
@@ -432,6 +429,7 @@ export default function App() {
     }
   }, [generatedIndex, generatedEntries]);
 
+  // Markdown Aggregation
   useEffect(() => {
       if (generatedEntries.length === 0) return;
       const mdOutput = generatedEntries.map(e => {
@@ -507,15 +505,12 @@ ${sentencesStr}
     } catch (error) { console.error("Gemini API Error:", error); return null; }
   };
 
-  // --- Playground Logic (RESTORED FULLY) ---
+  // --- Playground Logic (Full) ---
   const handlePlaygroundChat = async () => {
     if (!playgroundUserMsg.trim()) return;
-
     const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
     const newHistory = [...playgroundChat, userMsg];
-    setPlaygroundChat(newHistory);
-    setPlaygroundUserMsg('');
-    setIsPlaygroundChatting(true);
+    setPlaygroundChat(newHistory); setPlaygroundUserMsg(''); setIsPlaygroundChatting(true);
 
     const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
     let systemPrompt = "";
@@ -625,224 +620,62 @@ ${sentencesStr}
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
-    
     if (inputMode === 'word') {
         const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === target.toLowerCase());
-        if (existingItem) {
-            setEntry(existingItem.entry);
-            setGeneratedEntries([existingItem.entry]);
-            setGeneratedIndex(0);
-            setMainTab('dictionary');
-            setInputWord(''); // Clear input on success
-            return;
-        }
+        if (existingItem) { setEntry(existingItem.entry); setGeneratedEntries([existingItem.entry]); setGeneratedIndex(0); setMainTab('dictionary'); setInputWord(''); return; }
     }
-
-    setIsGenerating(true);
-    setMainTab('dictionary');
-
-    const langInstruction = isAutoLang 
-      ? `DETECT Lang. Matches FR/DE/JA/ES/IT/EN? Use it. Else EN.` 
-      : `Target: ${LANGUAGES.find(l => l.code === currentLang)?.label}.`;
-
-    const definitionFocus = isFigurativeMode 
-      ? `PRIORITY: FIGURATIVE MEANING.` 
-      : `Concise Simplified Chinese definition (B2-C2).`;
-
-    let prompt = "";
+    setIsGenerating(true); setMainTab('dictionary');
+    const langInstr = isAutoLang ? `DETECT Lang.` : `Target: ${LANGUAGES.find(l => l.code === currentLang)?.label}.`;
+    const definitionFocus = isFigurativeMode ? `PRIORITY: FIGURATIVE MEANING.` : `Concise Simplified Chinese definition (B2-C2).`;
+    const commonSchema = `JSON Schema: { "word": "Lemma", "lang": "code", "pos": "CN", "meaning": "CN", "level": "B2", "theme": "Topic", "sentences": [{"target":"...","translation":"..."}], "synonyms": [], "crossRefs": [] }`;
+    const prompt = inputMode === 'word' || overrideWord ? `SYSTEM: Polyglot Lexicon. ${langInstr} User: CN Native. Gen JSON for "${target}". RULES: 1. ${definitionFocus} 2. CN output. 3. Kana only for JP. 4. CrossRefs mandatory. 5. Min 2 sentences. 6. Level Uppercase. ${commonSchema}` : `Analyze text. ${langInstr} Extract 3-8 items. STRICT: Words must be in text. Return JSON ARRAY. ${commonSchema} Input: "${target.substring(0, 2000)}"`;
     
-    const commonSchema = `
-        JSON Schema:
-        {
-          "word": "Lemma",
-          "lang": "code (e.g. 'en', 'fr', 'de')", 
-          "pos": "POS (Chinese)",
-          "gender": "m/f/n (optional)",
-          "pronunciation": "...",
-          "meaning": "Chinese Def",
-          "idiom": "Phrase (if applicable)",
-          "idiomMeaning": "Meaning",
-          "level": "CEFR Level (A1, A2, B1, B2, C1, C2)",
-          "theme": "Topic (CN)",
-          "morphology": "e.g. Irregular Past Participle...",
-          "sentences": [
-             { "type": "Original/Common", "target": "Sentence 1", "translation": "CN Trans" },
-             { "type": "Advanced/Literary", "target": "Sentence 2", "translation": "CN Trans" }
-          ],
-          "synonyms": ["Syn1", "Syn2"], 
-          "antonyms": ["Ant1"], 
-          "crossRefs": [{ "lang": "code", "word": "..." }]
-        }
-    `;
-
-    if (inputMode === 'word' || overrideWord) { 
-      prompt = `
-        SYSTEM: Polyglot Lexicon.
-        ${langInstruction}
-        User: CN Native. Work: EN, DE. Goal: JP (N1), FR/ES/IT (C1).
-        Generate JSON for "${target}".
-        
-        RULES:
-        1. ${definitionFocus}
-        2. "pos", "theme", "meaning": IN SIMPLIFIED CHINESE.
-        3. "pronunciation": ONLY Kana for JP. NO IPA for others.
-        4. "crossRefs": Equiv in [fr, de, es, it, en, ja] (exclude target).
-        5. MUST PROVIDE AT LEAST 2 SENTENCES.
-        6. LEVEL MUST BE UPPERCASE (A1-C2).
-        7. IF IRREGULAR CONJUGATION/PLURAL, FILL "morphology" field.
-        
-        ${commonSchema}
-      `;
-    } else {
-      // RESTORED: Full Text Mode Prompt
-      prompt = `
-        TASK: Analyze text, Detect Language, Extract 3-8 key vocabulary items.
-        
-        Input Text: "${target.substring(0, 2000)}"
-
-        CRITICAL INSTRUCTIONS:
-        1. DETECT the language of the input text (e.g. French, German). 
-           - Set "lang" field to this detected code (e.g. 'fr', 'de') for ALL extracted words.
-           - Do not default to English unless the text is English.
-        
-        2. "level" ESTIMATION:
-           - Analyze the difficulty of EACH extracted word individually based on CEFR standards.
-           - Basic words = A1/A2. Intermediate = B1/B2. Advanced/Rare = C1/C2.
-           - DO NOT just set everything to B2. Vary the levels accurately.
-        
-        3. DATA COMPLETENESS:
-           - "pronunciation": Required for Japanese (Kana). Optional for others.
-           - "crossRefs": MANDATORY. Provide at least 2 equivalents in other languages.
-           - "word": If the item is an IDIOM in the text, use the full idiom as the key.
-        
-        4. "sentences":
-           - Sentence 1 ("Original"): Must be a direct quote from the text where the word appears.
-           - Sentence 2 ("Example"): A new generated example sentence.
-
-        Return a JSON ARRAY.
-        ${commonSchema}
-      `;
-    }
-
     const result = await callGemini(prompt, true);
     setIsGenerating(false);
-
     if (result) {
       try {
         const parsed = JSON.parse(result);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
-        const validEntries = entries.map((e: any) => ({
-            ...e,
-            word: e.word, 
-            sentences: e.sentences || [],
-            synonyms: e.synonyms || [],
-            antonyms: e.antonyms || [],
-            crossRefs: e.crossRefs || [],
-            pos: formatPOS(e.pos),
-            level: e.level?.toUpperCase() || 'B2'
-        }));
-
-        setGeneratedEntries(validEntries);
-        setGeneratedIndex(0);
-        setEntry(validEntries[0]);
-        if (validEntries[0]?.lang) setCurrentLang(validEntries[0].lang as Language);
+        const validEntries = entries.map((e: any) => ({ ...e, sentences: e.sentences||[], synonyms: e.synonyms||[], crossRefs: e.crossRefs||[], pos: formatPOS(e.pos), level: e.level?.toUpperCase()||'B2' }));
+        setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); if (validEntries[0]?.lang) setCurrentLang(validEntries[0].lang as Language);
       } catch (e) { alert("Failed to parse AI response."); }
     }
   };
 
   const handleSmartImport = async () => {
       if (!importText) return;
-      setIsGenerating(true);
-      setMainTab('dictionary');
-      
-      const prompt = `
-        PARSE input text to JSON ARRAY for a Polyglot App.
-        DETECT LANGUAGE AUTOMATICALLY.
-        Target User: Chinese Native.
-        
-        TASK:
-        1. Identify vocabulary items.
-        2. GENERATE missing definitions, sentences, synonyms.
-        3. GENERATE 'theme' (Topic) for each word.
-        4. "level" should be estimated (B2 default).
-        5. Ensure NO duplicates.
-        
-        JSON Schema per item:
-        { "word": "...", "lang": "code", "pos": "CN", "meaning": "CN", "level": "B2", "theme": "Topic", "sentences": [{"target":"...","translation":"..."}], "synonyms": ["..."], "crossRefs": [] }
-        
-        Input Text:
-        "${importText.substring(0, 4000)}"
-      `;
-
+      setIsGenerating(true); setMainTab('dictionary');
+      const prompt = `PARSE input text to JSON ARRAY. User: CN Native. TASK: 1. Identify vocab. 2. Gen missing definitions/sentences. 3. Gen theme. 4. Estimate level. Input: "${importText.substring(0, 4000)}"`;
       const result = await callGemini(prompt, true);
       setIsGenerating(false);
-
       if (result) {
           try {
-              const parsed = JSON.parse(result);
-              const entries = Array.isArray(parsed) ? parsed : [parsed];
-              
-              const existingWords = new Set(savedItems.map(i => i.entry.word.toLowerCase()));
-              const uniqueEntries = entries.filter((e: any) => !existingWords.has(e.word?.toLowerCase()));
-              
-              const validEntries = uniqueEntries.map((e: any) => ({
-                ...e,
-                sentences: e.sentences || [],
-                synonyms: e.synonyms || [],
-                antonyms: e.antonyms || [],
-                crossRefs: e.crossRefs || [],
-                pos: formatPOS(e.pos),
-                level: e.level?.toUpperCase() || 'B2',
-                source: "Smart Import"
-              }));
-              
-              if (validEntries.length > 0) {
-                  const batch = validEntries.map((en: VocabEntry) => {
-                      const newItem: ReviewItem = {
-                          id: crypto.randomUUID(),
-                          entry: en,
-                          stage: 0,
-                          nextReviewDate: Date.now(), 
-                          lastReviewedDate: Date.now(),
-                          created_at: Date.now(),
-                          isArchived: false
-                      };
+              const entries = JSON.parse(result);
+              const unique = (Array.isArray(entries) ? entries : [entries]).filter((e: any) => !savedItems.some(i => i.entry.word.toLowerCase() === e.word.toLowerCase()));
+              if (unique.length > 0) {
+                  const batch = unique.map((en: VocabEntry) => {
+                      const newItem: ReviewItem = { id: crypto.randomUUID(), entry: { ...en, source: "Smart Import" }, stage: 0, nextReviewDate: Date.now(), lastReviewedDate: Date.now(), created_at: Date.now(), isArchived: false };
                       return setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
                   });
                   await Promise.all(batch);
-                  alert(`Smart Import: ${validEntries.length} new cards created! (${entries.length - validEntries.length} duplicates skipped)`);
-                  setGeneratedEntries(validEntries);
-                  setEntry(validEntries[0]);
-                  setImportText(''); 
-              } else {
-                  alert("No new words found or all were duplicates.");
+                  alert(`Imported ${unique.length} items.`);
+                  setGeneratedEntries(unique); setEntry(unique[0]); setImportText('');
               }
-          } catch (e) { console.error(e); alert("Smart Import Failed. Please check text format."); }
+          } catch (e) { alert("Import Failed."); }
       }
   };
 
   const handleAutoCluster = async () => {
       setIsClustering(true);
-      const currentThemes = [...new Set(savedItems.map(i => i.entry.theme))];
-      
-      const prompt = `
-        Group these themes into 6-8 standardized CHINESE categories (e.g. 商业, 生活, 科技, 情感).
-        Return JSON mapping: { "old_theme": "New Category", ... }
-        Themes: ${JSON.stringify(currentThemes)}
-      `;
-      
-      const result = await callGemini(prompt, true);
+      const themes = [...new Set(savedItems.map(i => i.entry.theme))];
+      const result = await callGemini(`Group themes into 6-8 CN categories. JSON { "old": "new" }. Themes: ${JSON.stringify(themes)}`, true);
       setIsClustering(false);
-      
       if (result) {
           try {
-              const mapping = JSON.parse(result);
+              const map = JSON.parse(result);
               const batch = writeBatch(db);
               savedItems.forEach(item => {
-                  if (mapping[item.entry.theme] && mapping[item.entry.theme] !== item.entry.theme) {
-                      const ref = doc(db, 'vocabulary', item.id);
-                      batch.update(ref, { 'entry.theme': mapping[item.entry.theme] });
-                  }
+                  if (mapping[item.entry.theme]) batch.update(doc(db, 'vocabulary', item.id), { 'entry.theme': map[i.entry.theme] });
               });
               await batch.commit();
               alert("Themes Organized!");
@@ -853,190 +686,73 @@ ${sentencesStr}
   const handleSmartEnrich = async () => {
       if (!entry) return;
       setIsEnriching(true);
-      
-      const hasSentences = entry.sentences && entry.sentences.length > 0;
-      
-      let taskInstruction = `
-        TASK: Add 5 synonyms, Cross-Language (fr, de, es, it, en, ja), Ensure 2 sentences.
-        Return FULL updated JSON.
-      `;
-
-      if (hasSentences) {
-          taskInstruction = `
-            TASK: 
-            1. Add 1 NEW "Advanced/Literary" sentence that is DIFFERENT from existing ones.
-            2. Add/Refine Synonyms & Cross-Refs.
-            3. DO NOT delete existing sentences.
-            Return FULL updated JSON.
-          `;
-      }
-      
-      const prompt = `
-        ENRICH entry. Word: "${entry.word}".
-        Current: ${JSON.stringify(entry)}
-        ${taskInstruction}
-      `;
-      
-      const result = await callGemini(prompt, true);
+      const hasSents = entry.sentences && entry.sentences.length > 0;
+      const task = hasSents ? `TASK: 1. Add 1 NEW "Advanced/Literary" sentence. 2. Add Synonyms/CrossRefs. 3. DO NOT delete existing.` : `TASK: Add 2 sentences, synonyms, cross-refs.`;
+      const result = await callGemini(`ENRICH "${entry.word}". Current: ${JSON.stringify(entry)} ${task} Return FULL JSON.`, true);
       setIsEnriching(false);
-      
       if (result) {
           try {
               const enriched = JSON.parse(result);
-              
-              let newSentences = entry.sentences || [];
-              if (enriched.sentences && Array.isArray(enriched.sentences)) {
-                  const existingTargets = new Set(newSentences.map(s => s.target));
-                  const uniqueNew = enriched.sentences.filter((s: any) => !existingTargets.has(s.target));
-                  newSentences = [...newSentences, ...uniqueNew];
+              let newSents = entry.sentences || [];
+              if (enriched.sentences) {
+                  const existT = new Set(newSents.map(s => s.target));
+                  newSents = [...newSents, ...enriched.sentences.filter((s: any) => !existT.has(s.target))];
               }
-
-              const merged: VocabEntry = {
-                  ...entry,
-                  ...enriched,
-                  sentences: newSentences,
-                  crossRefs: enriched.crossRefs || entry.crossRefs,
-                  pos: formatPOS(enriched.pos || entry.pos),
-                  level: enriched.level?.toUpperCase() || entry.level
-              };
-              
+              const merged = { ...entry, ...enriched, sentences: newSents, crossRefs: enriched.crossRefs || entry.crossRefs, pos: formatPOS(enriched.pos || entry.pos) };
               setEntry(merged);
-              const newGen = [...generatedEntries];
-              newGen[generatedIndex] = merged;
-              setGeneratedEntries(newGen);
-              
-              if (isCurrentSaved) {
-                  await updateDoc(doc(db, 'vocabulary', isCurrentSaved.id), { entry: sanitizeData(merged) });
-                  alert("Enriched & Updated!");
-              }
+              const newGen = [...generatedEntries]; newGen[generatedIndex] = merged; setGeneratedEntries(newGen);
+              if (isCurrentSaved) { await updateDoc(doc(db, 'vocabulary', isCurrentSaved.id), { entry: sanitizeData(merged) }); alert("Updated!"); }
           } catch(e) { alert("Enrich failed"); }
       }
   };
 
   const handleSmartSave = async () => {
     if (!entry) return;
-    
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
-    
-    const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
+    const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
-    let newItem: ReviewItem;
-
-    const entryToSave = { ...entry, word: wordToSave };
-
-    if (existingItem) {
-      if (!window.confirm(`"${wordToSave}" exists! Merge?`)) return;
-      
-      const mergedEntry: VocabEntry = {
-        ...existingItem.entry,
-        sentences: [...(existingItem.entry.sentences || []), ...entry.sentences],
-        synonyms: Array.from(new Set([...(existingItem.entry.synonyms || []), ...entry.synonyms])),
-        antonyms: Array.from(new Set([...(existingItem.entry.antonyms || []), ...entry.antonyms])),
-        meaning: entry.meaning.length > existingItem.entry.meaning.length ? entry.meaning : existingItem.entry.meaning,
-        level: entry.level,
-        theme: entry.theme,
-        crossRefs: [...(existingItem.entry.crossRefs || []), ...entry.crossRefs],
-        pos: formatPOS(entry.pos)
-      };
-      
-      await updateDoc(doc(db, 'vocabulary', existingItem.id), { entry: sanitizeData(mergedEntry), created_at: now }); 
+    if (exist) {
+      if (!confirm(`Merge "${wordToSave}"?`)) return;
+      const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
+      await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
       alert("Merged!");
     } else {
-      newItem = {
-        id: crypto.randomUUID(),
-        entry: entryToSave, 
-        stage: 0, 
-        nextReviewDate: Date.now(), 
-        lastReviewedDate: Date.now(),
-        created_at: now,
-        addedAt: now, 
-        isArchived: false
-      };
-      try {
-        await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
-        alert(`Saved: ${wordToSave}`);
-      } catch (e) { console.error("Save failed", e); alert("Save failed. Check console."); }
+      const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
+      await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
+      alert(`Saved: ${wordToSave}`);
     }
   };
 
   const handleReviewAction = async (remember: boolean) => {
-      const item = reviewQueue[0]; 
-      if (!item) return; 
-
-      setReviewQueue(prev => prev.slice(1)); 
-      setIsReviewFlipped(false);
-
+      const item = reviewQueue[0]; if (!item) return; 
+      setReviewQueue(prev => prev.slice(1)); setIsReviewFlipped(false);
       try {
-          if (remember) {
-            const nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
-            await updateDoc(doc(db, 'vocabulary', item.id), {
-                nextReviewDate: Date.now() + INTERVALS[nextStage] * 86400000,
-                stage: nextStage,
-                lastReviewedDate: Date.now()
-            });
-          } else {
-            await updateDoc(doc(db, 'vocabulary', item.id), {
-                nextReviewDate: Date.now(), 
-                stage: 0
-            });
-          }
-      } catch(e) { 
-        console.error(e); 
-      }
-
-      if (reviewQueue.length <= 1) {
-          setMainTab('library');
-      }
+          const nextStage = remember ? Math.min(item.stage + 1, INTERVALS.length - 1) : 0;
+          await updateDoc(doc(db, 'vocabulary', item.id), { nextReviewDate: remember ? Date.now() + INTERVALS[nextStage] * 86400000 : Date.now(), stage: nextStage, lastReviewedDate: Date.now() });
+      } catch(e) { console.error(e); }
+      if (reviewQueue.length <= 1) setMainTab('library');
   };
 
   const handleChatSubmit = async () => {
     if (!chatInput || !entry) return;
     const userMsg: ChatMessage = { role: 'user', text: chatInput, timestamp: Date.now() };
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatInput('');
-    setIsChatting(true);
-    if (chatInput.trim() === '/json') {
-        setChatMessages(prev => [...prev, { role: 'ai', text: "JSON Data:\n" + JSON.stringify(entry, null, 2), timestamp: Date.now() }]);
-        setIsChatting(false);
-        return;
-    }
-
-    const prompt = `Context: Word "${entry.word}" (${entry.meaning}). User Question: "${userMsg.text}". Answer concisely in Chinese. Pure Text only (no markdown).`;
-    const res = await callGemini(prompt);
-    setIsChatting(false);
-    if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
+    setChatMessages(prev => [...prev, userMsg]); setChatInput(''); setIsChatting(true);
+    if (chatInput.trim() === '/json') { setChatMessages(prev => [...prev, { role: 'ai', text: JSON.stringify(entry, null, 2), timestamp: Date.now() }]); setIsChatting(false); return; }
+    const res = await callGemini(`Context: "${entry.word}" (${entry.meaning}). User: "${userMsg.text}". Answer in CN.`);
+    setIsChatting(false); if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
   const handleStory = async (words: VocabEntry[]) => {
     if (words.length === 0) return;
-    setIsGeneratingStory(true);
-    setShowStoryModal(true);
-    
+    setIsGeneratingStory(true); setShowStoryModal(true);
     const targetLang = words[0].lang; 
     const langName = LANGUAGES.find(l => l.code === targetLang)?.label || targetLang;
-
-    const wordList = words.map(w => `${w.word} (${w.meaning})`).join(', ');
-    
-    const prompt = `
-      Create a short mnemonic story using these words: ${wordList}.
-      
-      CONSTRAINTS:
-      1. The "target_story" MUST be in ${langName} (Language Code: ${targetLang}).
-      2. The "mixed_story" must be in Chinese, using the keywords in bold.
-      
-      Return JSON: { "target_story": "...", "mixed_story": "..." }
-    `;
-    
-    const result = await callGemini(prompt, true);
-    if (result) {
-        try {
-             setStoryContent(JSON.parse(result));
-        } catch (e) { console.error(e); }
-    }
+    const result = await callGemini(`Create story with: ${words.map(w=>w.word).join(',')}. CONSTRAINTS: 1. Target Story MUST be in ${langName}. 2. Mixed Story in Chinese with bold keywords. JSON: { "target_story": "...", "mixed_story": "..." }`, true);
+    if (result) { try { setStoryContent(JSON.parse(result)); } catch (e) { console.error(e); } }
     setIsGeneratingStory(false);
   };
 
-  // ✅ 复活的 handleGenerateImage (兼容 Imagen 和 Pollinations)
+  // ✅ Image Generation: Use the specific model user requested
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
@@ -1044,7 +760,6 @@ ${sentencesStr}
       try {
           const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
           
-          // 尝试调用 Imagen (如果你的 Key 有权限)
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, 
             { 
@@ -1058,18 +773,14 @@ ${sentencesStr}
           );
           
           if (!response.ok) {
-              // ❌ 如果 Imagen 失败 (403/404)，自动切换到 Pollinations (免费)
-              console.warn("Imagen failed, trying Pollinations...");
+              // If official model fails (403/404), fall back to Pollinations
+              console.warn("Imagen API failed/restricted, switching to Pollinations fallback.");
               const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
-              // 预加载检查
               const img = new Image();
               img.src = pollinationsUrl;
-              img.onload = () => {
-                  setGeneratedImage(pollinationsUrl);
-                  setIsGeneratingImage(false);
-              };
+              img.onload = () => { setGeneratedImage(pollinationsUrl); setIsGeneratingImage(false); };
+              img.onerror = () => { throw new Error("Fallback failed"); };
           } else {
-             // ✅ 如果 Imagen 成功
              const data = await response.json();
              if (data.predictions?.[0]?.bytesBase64Encoded) {
                  setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
@@ -1077,7 +788,7 @@ ${sentencesStr}
              setIsGeneratingImage(false);
           }
       } catch (e) { 
-          // 最后的保底
+          // Final safety net
           const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
           setGeneratedImage(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`);
           setIsGeneratingImage(false);
@@ -1086,64 +797,20 @@ ${sentencesStr}
 
   const startRoleplay = async () => {
       if (!entry) return;
-      setChatInput('');
-      setIsChatting(true);
-      const prompt = `
-        Roleplay Scenario for "${entry.word}" (Meaning: ${entry.meaning}).
-        Language: ${entry.lang}.
-        
-        OUTPUT FORMAT:
-        Context: [Target Language Context, max 1 sentence]
-        AI: [Opening line in Target Language using the word]
-        Guide: [Specific hint/question in ${entry.lang} to guide user]
-        
-        NO translations.
-      `;
-      const res = await callGemini(prompt);
-      setIsChatting(false);
-      if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
+      setChatInput(''); setIsChatting(true);
+      const res = await callGemini(`Roleplay Scenario for "${entry.word}". Language: ${entry.lang}. OUTPUT: Context, AI line, Guide. NO translations.`);
+      setIsChatting(false); if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
   const getEtymology = async () => {
       if (!entry) return;
-      setChatInput('');
-      setIsChatting(true);
-      const prompt = `Etymology of "${entry.word}". Output in Chinese. NO Pinyin. NO English translation at end.`;
-      const res = await callGemini(prompt);
-      setIsChatting(false);
-      if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
+      setChatInput(''); setIsChatting(true);
+      const res = await callGemini(`Etymology of "${entry.word}". Output in Chinese.`);
+      setIsChatting(false); if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
-  const showEntryJson = () => {
-      if (!entry) return;
-      alert(JSON.stringify(entry, null, 2));
-  };
-
-  const filteredItems = useMemo(() => {
-      let res = savedItems.filter(i => i.isArchived === showArchived);
-      if (filters.lang !== 'all') res = res.filter(i => i.entry.lang === filters.lang);
-      if (filters.level !== 'all') res = res.filter(i => i.entry.level === filters.level);
-      if (filters.pos !== 'all') res = res.filter(i => i.entry.pos === filters.pos);
-      if (filters.theme !== 'all') res = res.filter(i => i.entry.theme === filters.theme);
-
-      res.sort((a, b) => {
-          if (sortMode === 'recent') return b.created_at - a.created_at; 
-          if (sortMode === 'review_soon') return a.nextReviewDate - b.nextReviewDate;
-          if (sortMode === 'level_asc') return a.entry.level.localeCompare(b.entry.level);
-          return 0;
-      });
-      return res;
-  }, [savedItems, filters, sortMode, showArchived]);
-
-  const availableLevels = useMemo(() => [...new Set(savedItems.map(i=>i.entry.level))].sort(), [savedItems]);
-  const availablePos = useMemo(() => [...new Set(savedItems.map(i=>i.entry.pos))].sort(), [savedItems]);
-  const availableThemes = useMemo(() => [...new Set(savedItems.map(i=>i.entry.theme))].sort(), [savedItems]);
-  const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
-
-  const getNextIntervalLabel = (currentStage: number) => {
-    const nextStage = Math.min(currentStage + 1, INTERVALS.length - 1);
-    return `${INTERVALS[nextStage]}d`;
-  };
+  const showEntryJson = () => { if (!entry) return; alert(JSON.stringify(entry, null, 2)); };
+  const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 md:pb-0 safe-p-b">
