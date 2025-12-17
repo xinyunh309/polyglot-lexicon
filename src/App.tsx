@@ -23,8 +23,8 @@ import {
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 // 强制使用 2.5 Flash
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
+const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts";
+const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
 // Firebase Config (Environment Variables)
 const userFirebaseConfig = {
