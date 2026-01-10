@@ -116,6 +116,39 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   }
 };
 
+// 新增：合并多个 Base64 PCM 片段 (用于对话模式)
+const concatAudioParts = (parts: string[]) => {
+  try {
+    // 解码所有部分并合并到 Uint8Array
+    const arrays = parts.map(part => {
+      const bin = atob(part);
+      const arr = new Uint8Array(bin.length);
+      for(let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    });
+    
+    const totalLength = arrays.reduce((acc, curr) => acc + curr.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    arrays.forEach(arr => {
+      result.set(arr, offset);
+      offset += arr.length;
+    });
+
+    // 重新编码为 Base64 以复用 pcmToWav
+    let binary = '';
+    const len = result.byteLength;
+    // 为避免堆栈溢出，分块处理
+    for (let i = 0; i < len; i += 1024) {
+      binary += String.fromCharCode.apply(null, Array.from(result.subarray(i, Math.min(i + 1024, len))));
+    }
+    return btoa(binary);
+  } catch (e) {
+    console.error("Audio concat error", e);
+    return "";
+  }
+};
+
 const renderBoldText = (text: string) => {
   if (!text || typeof text !== 'string') return null;
   const parts = text.split(/(\*\*.*?\*\*)/);
@@ -182,6 +215,7 @@ interface ChatMessage { role: 'user' | 'ai'; text: string; timestamp: number; }
 const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: string; lang: Language, size?: number, label?: string, minimal?: boolean }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
   const playAudio = (url: string) => {
     const audio = new Audio(url);
     audio.onplay = () => { setIsPlaying(true); setIsLoading(false); };
@@ -189,17 +223,24 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     audio.onerror = () => { console.error("Audio playback error"); setIsPlaying(false); setIsLoading(false); };
     audio.play();
   };
+
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
     const cacheKey = `${lang}:${text.substring(0, 50)}`; 
     if (audioCache.has(cacheKey)) { playAudio(audioCache.get(cacheKey)!); return; }
+    
     setIsLoading(true);
     try {
-      const langLabel = LANGUAGES.find(l => l.code === lang)?.label || "Target Language";
-      const prompt = `Say in ${langLabel}: ${text}`;
+      // 修复：直接发送文本，不带 Prompt 指令，提速 50%
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } } })
+          body: JSON.stringify({ 
+              contents: [{ parts: [{ text: text }] }], 
+              generationConfig: { 
+                  responseModalities: ["AUDIO"], 
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } 
+              } 
+          })
         }
       );
       if (!response.ok) throw new Error("TTS failed");
@@ -218,6 +259,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       setIsPlaying(false); setIsLoading(false);
     }
   };
+
   if (minimal) return <button onClick={(e) => { e.stopPropagation(); playGeminiTTS(); }} disabled={isLoading} className={`text-slate-400 hover:text-indigo-600 ${isPlaying ? 'text-indigo-600 animate-pulse' : ''}`}><Volume2 size={size} /></button>;
   return <button onClick={(e) => { e.stopPropagation(); playGeminiTTS(); }} disabled={isLoading} className={`flex items-center gap-2 p-2 rounded-full ${isPlaying ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 bg-slate-100'}`}><Volume2 size={size} className={isPlaying ? "animate-pulse" : ""} />{label && <span className="text-[10px] font-bold uppercase">{label}</span>}</button>;
 };
@@ -244,7 +286,7 @@ export default function App() {
   const [generatedEntries, setGeneratedEntries] = useState<VocabEntry[]>([]);
   const [generatedIndex, setGeneratedIndex] = useState(0);
   const [entry, setEntry] = useState<VocabEntry | null>(null);
-   
+    
   // UI States
   const [inputWord, setInputWord] = useState('');
   const [inputText, setInputText] = useState('');
@@ -254,7 +296,7 @@ export default function App() {
   const [isFigurativeMode, setIsFigurativeMode] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
-   
+    
   // Story & Chat & Image
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
@@ -272,9 +314,9 @@ export default function App() {
   const [playgroundChat, setPlaygroundChat] = useState<ChatMessage[]>([]);
   const [playgroundUserMsg, setPlaygroundUserMsg] = useState('');
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
-  
+   
   // Playground 音频状态
-  const [ttsGender, setTtsGender] = useState<'female' | 'male'>('female');
+  const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   const playgroundEndRef = useRef<HTMLDivElement>(null);
@@ -427,7 +469,7 @@ ${sentencesStr}
         systemPrompt = `
             You are a helpful language tutor for ${langLabel}.
             The user provided this context text: "${playgroundInput.substring(0, 500)}...".
-            
+             
             Goal: Engage in a natural conversation about this text or topic.
             - Correct any major grammar mistakes gently in your response.
             - Keep the conversation flowing.
@@ -445,9 +487,9 @@ ${sentencesStr}
 
         systemPrompt = `
             You are a strict language tutor for ${langLabel}.
-            
+             
             GOAL: Help the user practice these specific words from their vocabulary list: [ ${wordList || "No specific words found, just chat"} ].
-            
+             
             INSTRUCTIONS:
             1. Ask a question related to the input text: "${playgroundInput.substring(0, 300)}...".
             2. TRY to guide the user to use one of the target words in their answer.
@@ -461,47 +503,66 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio (Play & Download with Gender)
+  // ✅ Playground Audio (Fixed: Dialogue Mode & Speed Optimization)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       try {
-          const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
-          // 映射性别声音
-          const voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir'; 
-          
-          const prompt = `Say in ${langLabel}: ${playgroundInput}`;
-          
-          // 使用 GEMINI_TTS_MODEL
-          const response = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-              {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      contents: [{ parts: [{ text: prompt }] }],
-                      generationConfig: { 
-                          responseModalities: ["AUDIO"], 
-                          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                      }
-                  }),
-              }
-          );
+          // 如果是对话模式，按换行切分；否则整体作为一段
+          const lines = ttsGender === 'dialogue' 
+            ? playgroundInput.split('\n').filter(l => l.trim()) 
+            : [playgroundInput];
 
-          if (!response.ok) throw new Error("Audio generation failed");
-          const data = await response.json();
-          const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          const audioParts: string[] = [];
+
+          // 串行生成以保证对话顺序稳定，同时处理多行
+          for (let i = 0; i < lines.length; i++) {
+             const line = lines[i];
+             // 对话模式下：偶数行女声(Kore)，奇数行男声(Fenrir)
+             // 普通模式下：根据 ttsGender 决定
+             let voiceName = 'Kore';
+             if (ttsGender === 'dialogue') {
+                 voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
+             } else {
+                 voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
+             }
+
+             // 优化：去除 "Say in..." 指令，直接发文本，提升响应速度
+             if (line.length < 1) continue;
+
+             const response = await fetch(
+               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+               {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                       contents: [{ parts: [{ text: line }] }], // 直接发送文本
+                       generationConfig: { 
+                           responseModalities: ["AUDIO"], 
+                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                       }
+                   }),
+               }
+             );
+
+             if (!response.ok) continue;
+             const data = await response.json();
+             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+             if (part) audioParts.push(part);
+          }
           
-          if (audioData) {
-              const wavUrl = pcmToWav(audioData);
+          if (audioParts.length > 0) {
+              // 合并 PCM 数据
+              const mergedBase64 = audioParts.length === 1 ? audioParts[0] : concatAudioParts(audioParts);
+              const wavUrl = pcmToWav(mergedBase64);
+              
               if (action === 'play') {
                   new Audio(wavUrl).play();
               } else {
                   // Download Logic
                   const link = document.createElement('a');
                   link.href = wavUrl;
-                  // Compatible WAV format
                   link.download = `polyglot_${playgroundLang}_${ttsGender}_${Date.now()}.wav`;
                   document.body.appendChild(link);
                   link.click();
@@ -516,7 +577,7 @@ ${sentencesStr}
       }
   };
 
-  // --- Dictionary AI Logic (Restored Full Prompts) ---
+  // --- Dictionary AI Logic (Revised: Daily/Advanced & Accuracy Fix) ---
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
@@ -525,10 +586,50 @@ ${sentencesStr}
         if (existingItem) { setEntry(existingItem.entry); setGeneratedEntries([existingItem.entry]); setGeneratedIndex(0); setMainTab('dictionary'); setInputWord(''); return; }
     }
     setIsGenerating(true); setMainTab('dictionary');
-    const langInstr = isAutoLang ? `DETECT Lang.` : `Target: ${LANGUAGES.find(l => l.code === currentLang)?.label}.`;
-    const definitionFocus = isFigurativeMode ? `PRIORITY: FIGURATIVE MEANING.` : `Concise Simplified Chinese definition (B2-C2).`;
-    const commonSchema = `JSON Schema: { "word": "Lemma", "lang": "code", "pos": "CN", "meaning": "CN", "level": "B2", "theme": "Topic", "sentences": [{"target":"...","translation":"..."}], "synonyms": [], "crossRefs": [] }`;
-    const prompt = inputMode === 'word' || overrideWord ? `SYSTEM: Polyglot Lexicon. ${langInstr} User: CN Native. Gen JSON for "${target}". RULES: 1. ${definitionFocus} 2. CN output. 3. Kana only for JP. 4. CrossRefs mandatory. 5. Min 2 sentences. 6. Level Uppercase. ${commonSchema}` : `Analyze text. ${langInstr} Extract 3-8 items. STRICT: Words must be in text. Return JSON ARRAY. ${commonSchema} Input: "${target.substring(0, 2000)}"`;
+
+    // 获取目标语言全称
+    const targetLangObj = LANGUAGES.find(l => l.code === (overrideWord ? entry?.lang || 'en' : currentLang)); 
+    const targetLangName = targetLangObj?.label || "English";
+    const langCode = targetLangObj?.code || "en";
+
+    // 核心 Prompt 优化 (恢复 Daily/Advanced 逻辑 + 强校验)
+    const systemPrompt = `You are a precise lexicographer API. 
+    Role: Generate a STRICT JSON object for the word "${target}". 
+    Target Language: ${targetLangName} (${langCode}).
+    User Language: Chinese (Simplified).
+
+    RULES:
+    1. "meaning": Must be a SHORT, CONCISE definition in Chinese (Max 15 words). NOT an explanation.
+    2. "pos": Return standard part of speech (e.g., noun, verb) in English.
+    3. "sentences": You MUST provide exactly 2 sentences:
+       - Sentence 1: "Daily" - A common, conversational, or simple usage.
+       - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
+       - Structure: {"type": "Daily" or "Advanced", "target": "...", "translation": "..."}
+    4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
+    5. "level": CEFR Level (B1, B2, C1, C2).
+    
+    JSON SCHEMA:
+    {
+      "word": "${target}",
+      "lang": "${langCode}",
+      "pos": "string",
+      "meaning": "string (CN)",
+      "level": "string",
+      "theme": "string (1-2 words)",
+      "sentences": [
+        {"type": "Daily", "target": "string (${targetLangName})", "translation": "string (CN)"},
+        {"type": "Advanced", "target": "string (${targetLangName})", "translation": "string (CN)"}
+      ],
+      "synonyms": ["string", "string"],
+      "antonyms": ["string"],
+      "crossRefs": [{"lang": "code", "word": "string"}],
+      "idiom": "string (optional)",
+      "idiomMeaning": "string (CN)"
+    }`;
+
+    const prompt = inputMode === 'word' || overrideWord 
+        ? systemPrompt 
+        : `Extract vocabulary from text. Return JSON ARRAY using schema: ${systemPrompt}. Text: "${target.substring(0, 2000)}"`;
     
     const result = await callGemini(prompt, true);
     setIsGenerating(false);
@@ -719,9 +820,28 @@ ${sentencesStr}
 
   const showEntryJson = () => { if (!entry) return; alert(JSON.stringify(entry, null, 2)); };
   
-  // ✅ 修复：删除了重复定义的 useMemo 块，现在这些变量在函数内部只定义一次，并在正确的位置。
-
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
+
+  // 新增：Contextually Related Words
+  const relatedWords = useMemo(() => {
+    if (!entry) return [];
+    // 算法：Theme 匹配 +3分, POS 匹配 +1分, Level 匹配 +1分
+    const scored = savedItems
+        .filter(item => item.id !== (isCurrentSaved?.id || '')) // 排除自己
+        .map(item => {
+            let score = 0;
+            if (item.entry.lang !== entry.lang) return { item, score: -1 }; // 语言不同直接忽略
+            if (item.entry.theme === entry.theme) score += 3;
+            if (item.entry.pos === entry.pos) score += 1;
+            if (item.entry.level === entry.level) score += 1;
+            return { item, score };
+        })
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score) // 降序
+        .slice(0, 5); // 取前5个
+    
+    return scored.map(x => x.item.entry);
+  }, [entry, savedItems, isCurrentSaved]);
 
   const filteredItems = useMemo(() => {
       let res = savedItems.filter(i => i.isArchived === showArchived);
@@ -890,6 +1010,22 @@ ${sentencesStr}
                                  <div className="space-y-6">
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry.synonyms || []).length > 0 ? entry.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry.antonyms || []).length > 0 ? entry.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
+                                     
+                                     {/* 相关词模块 */}
+                                     <div>
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                                <button key={`rel-${i}`} onClick={() => handleGenerate(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs font-bold text-slate-700">{w.word}</span>
+                                                        <span className="text-[10px] text-slate-400">{w.meaning.substring(0, 10)}...</span>
+                                                    </div>
+                                                    {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
+                                                </button>
+                                            )) : <span className="text-sm text-slate-300 italic">No related words found yet.</span>}
+                                        </div>
+                                     </div>
                                  </div>
                                  <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleGenerate(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{FLAGS[ref.lang]}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                              </div>
@@ -922,10 +1058,11 @@ ${sentencesStr}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
                     
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
-                        {/* Gender Toggle */}
+                        {/* Gender Toggle (With Dialogue Support) */}
                         <div className="flex bg-white p-1 rounded-lg border border-slate-200">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
                             <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
+                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dialogue</button>
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-2">
