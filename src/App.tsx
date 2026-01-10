@@ -4,9 +4,9 @@ import {
   ChevronRight, Save, CheckCircle, Loader2, X,
   Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
   Upload, Merge, Database, Send, Eye, EyeOff, 
-  Image as ImageIcon, Gamepad2, Trash2,
+  Zap, Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split
+  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -22,7 +22,7 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Using Pro Preview TTS for stability
+// Using Pro Preview TTS for stability & quality
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
@@ -183,7 +183,6 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
-// Simplified map since we now ask AI to return Chinese directly, but kept for legacy data compatibility
 const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
@@ -539,17 +538,39 @@ ${sentencesStr}
             : [playgroundInput];
 
           const audioParts: string[] = [];
+          
+          // Voice assignment map for roles
+          const roleVoiceMap = new Map<string, string>();
+          let nextVoiceIndex = 0;
+          const voices = ['Kore', 'Fenrir']; // F, M
 
           for (let i = 0; i < lines.length; i++) {
-             const line = lines[i];
+             let line = lines[i];
+             let textToSpeak = line;
              let voiceName = 'Kore';
+
              if (ttsGender === 'dialogue') {
-                 voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
+                 // Check for "Name: Content" pattern
+                 const match = line.match(/^([^:：]+)[:：]\s*(.+)/);
+                 if (match) {
+                     const name = match[1].trim();
+                     textToSpeak = match[2].trim(); // Strip name for TTS
+                     
+                     // Assign voice to role
+                     if (!roleVoiceMap.has(name)) {
+                         roleVoiceMap.set(name, voices[nextVoiceIndex % 2]);
+                         nextVoiceIndex++;
+                     }
+                     voiceName = roleVoiceMap.get(name)!;
+                 } else {
+                     // No name found, alternate based on line index if standard
+                     voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
+                 }
              } else {
                  voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
              }
 
-             if (line.length < 1) continue;
+             if (textToSpeak.length < 1) continue;
 
              const response = await fetch(
                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
@@ -557,7 +578,7 @@ ${sentencesStr}
                    method: 'POST',
                    headers: { 'Content-Type': 'application/json' },
                    body: JSON.stringify({
-                       contents: [{ parts: [{ text: line }] }], 
+                       contents: [{ parts: [{ text: textToSpeak }] }], 
                        generationConfig: { 
                            responseModalities: ["AUDIO"], 
                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
@@ -616,7 +637,7 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and IPA
+    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and Comprehensive Conjugation
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
@@ -636,13 +657,16 @@ ${sentencesStr}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
-    7. "pronunciation": MUST use International Phonetic Alphabet (IPA) inside brackets, e.g., /.../. Do NOT use phonetic respelling (e.g., ney-PREH-see).
+    7. "pronunciation": MUST use International Phonetic Alphabet (IPA) inside brackets, e.g., /.../.
     8. **IMPORTANT FOR JAPANESE/CHINESE**: 
        - "word" field MUST use Kanji/Hanzi (e.g., '猫').
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
     9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
     10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
-    11. **Conjugations**: If it is a VERB, provide 'conjugations' array for top 3 tenses (Present, Past, Future).
+    11. **Conjugations (IMPORTANT)**: If it is a VERB, provide a DETAILED 'conjugations' array.
+       - Include Indicative: Present, Imperfect, Future, Simple Past (Passato Remoto/Preterite).
+       - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
+       - Include: Participles (Present, Past) labeled as 'Participle'.
     
     JSON SCHEMA:
     {
@@ -659,7 +683,7 @@ ${sentencesStr}
       "synonyms": ["string", "string"],
       "antonyms": ["string"],
       "crossRefs": [{"lang": "code", "word": "string"}],
-      "conjugations": [{"tense": "string (CN)", "forms": ["string"]}],
+      "conjugations": [{"tense": "string (CN/Target)", "forms": ["string"]}],
       "morphology": "string (CN, optional)",
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
@@ -1281,27 +1305,40 @@ ${sentencesStr}
             </div>
         )}
 
-        {/* Conjugation Modal */}
+        {/* ✅ FIX: Enhanced Conjugation Modal */}
         {showConjugationModal && entry?.conjugations && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h3 className="font-bold text-base flex items-center gap-2 text-indigo-900">
-                            <Grid3X3 size={18} className="text-indigo-500"/> Conjugations
-                        </h3>
-                        <button onClick={()=>setShowConjugationModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={18}/></button>
-                    </div>
-                    <div className="p-4 overflow-y-auto flex-1 custom-scrollbar space-y-4">
-                        {entry.conjugations.map((c, i) => (
-                            <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                                <div className="text-xs font-bold text-indigo-600 uppercase mb-2 tracking-wider">{c.tense}</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {c.forms.map((f, idx) => (
-                                        <div key={idx} className="text-sm text-slate-700 bg-white px-2 py-1.5 rounded border border-slate-200">{f}</div>
-                                    ))}
-                                </div>
+                <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Layers size={20}/></div>
+                            <div>
+                                <h3 className="font-bold text-lg text-slate-900">Verb Conjugations</h3>
+                                <p className="text-xs text-slate-500 font-mono">Lemma: {entry.word}</p>
                             </div>
-                        ))}
+                        </div>
+                        <button onClick={()=>setShowConjugationModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
+                    </div>
+                    <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/50">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {entry.conjugations.map((c, i) => (
+                                <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow">
+                                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 font-bold text-sm text-indigo-900 uppercase tracking-wide flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                                        {c.tense}
+                                    </div>
+                                    <div className="p-4 flex-1">
+                                        <div className="grid grid-cols-1 gap-1.5">
+                                            {c.forms.map((f, idx) => (
+                                                <div key={idx} className="text-sm text-slate-700 py-1 px-2 hover:bg-slate-50 rounded transition-colors border-b border-slate-50 last:border-0 font-medium">
+                                                    {f}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
