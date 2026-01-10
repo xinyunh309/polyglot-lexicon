@@ -338,7 +338,7 @@ export default function App() {
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
    
   // Playground 音频状态
-  // ✅ FIX: Simplified UI - Female, Male, Dialogue (Auto)
+  // ✅ UI: Female, Male, Dialogue (Auto)
   const [ttsMode, setTtsMode] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
@@ -532,6 +532,29 @@ ${sentencesStr}
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      // Retry mechanism for 429 errors
+      const fetchWithRetry = async (url: string, options: any, retries = 3, backoff = 500) => {
+          for (let i = 0; i < retries; i++) {
+              try {
+                  const res = await fetch(url, options);
+                  if (res.status === 429) {
+                      console.warn(`Rate Limit 429. Retrying in ${backoff}ms...`);
+                      await delay(backoff);
+                      backoff *= 2; 
+                      continue;
+                  }
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  return res;
+              } catch (err) {
+                  if (i === retries - 1) throw err;
+                  await delay(backoff);
+              }
+          }
+          throw new Error("Max retries exceeded");
+      };
+
       try {
           // 1. Prepare lines
           const lines = playgroundInput.split('\n').filter(l => l.trim());
@@ -543,38 +566,32 @@ ${sentencesStr}
           if (ttsMode === 'dialogue') {
               // Analyze first few lines for names
               const previewText = lines.slice(0, 3).join('\n');
-              const prompt = `Analyze dialogue. Identify gender sequence of first two distinct speakers.
+              const prompt = `Identify gender sequence for these 2-3 speakers.
               Text: "${previewText}"
-              Return JSON: {"pattern": "MF"} (or FM, MM, FF). 
-              M=Male, F=Female.
-              Example: if Speaker A (Female) talks, then Speaker B (Male) talks -> "FM".`;
+              Return JSON: {"genders": ["male", "female"]} (or male/male, female/female etc).
+              If unclear, default to ["female", "male"].`;
               
               const analysis = await callGemini(prompt, true);
-              let pCode = "FM"; // default fallback
+              let genders = ['female', 'male']; // fallback
               
               try {
                   if (analysis) {
                       const parsed = JSON.parse(analysis);
-                      if (parsed.pattern) pCode = parsed.pattern;
+                      if (parsed.genders && Array.isArray(parsed.genders)) {
+                          genders = parsed.genders;
+                      }
                   }
               } catch (e) { console.warn("Gender detect failed, using default"); }
 
-              // Map pattern code to voice array [Voice1, Voice2]
-              // FM -> [Kore, Fenrir]
-              // MF -> [Fenrir, Kore]
-              // FF -> [Kore, Kore]
-              // MM -> [Fenrir, Fenrir]
-              const v1 = pCode.charAt(0).toUpperCase() === 'F' ? 'Kore' : 'Fenrir';
-              const v2 = pCode.charAt(1).toUpperCase() === 'F' ? 'Kore' : 'Fenrir';
-              pattern = [v1, v2];
-
+              // Map genders to voices
+              pattern = genders.map(g => g.toLowerCase().includes('female') ? 'Kore' : 'Fenrir');
           } else {
               // Manual Mode (All Female or All Male)
               const fixedVoice = ttsMode === 'female' ? 'Kore' : 'Fenrir';
               pattern = [fixedVoice]; 
           }
 
-          // 3. Generate Audio (No delay, full speed as requested)
+          // 3. Generate Audio (No intentional delay, using retry wrapper)
           for (let i = 0; i < lines.length; i++) {
              let line = lines[i];
              
@@ -584,33 +601,31 @@ ${sentencesStr}
              if (textToSpeak.length < 1) continue;
 
              // Select voice based on pattern loop (A-B-A-B or A-A-A...)
-             // pattern has length 2 (for dialogue) or 1 (for single)
-             // i % pattern.length automatically handles the alternation
              const voiceName = pattern[i % pattern.length];
 
-             const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-               {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({
-                       contents: [{ parts: [{ text: textToSpeak }] }], 
-                       generationConfig: { 
-                           responseModalities: ["AUDIO"], 
-                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                       }
-                   }),
-               }
-             );
+             try {
+                 const response = await fetchWithRetry(
+                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+                   {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({
+                           contents: [{ parts: [{ text: textToSpeak }] }], 
+                           generationConfig: { 
+                               responseModalities: ["AUDIO"], 
+                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                           }
+                       }),
+                   }
+                 );
 
-             if (!response.ok) {
-                 console.warn(`Line ${i} failed. Skipping.`);
-                 continue;
+                 const data = await response.json();
+                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                 if (part) audioParts.push(part);
+
+             } catch (lineError) {
+                 console.error(`Line ${i} failed. Skipping.`, lineError);
              }
-
-             const data = await response.json();
-             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-             if (part) audioParts.push(part);
           }
           
           if (audioParts.length > 0) {
@@ -1172,11 +1187,9 @@ ${sentencesStr}
                                  <div className="space-y-6">
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
-                                 </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
-                                 
-                                 {/* ✅ FIX: Moved to Full Width Layout */}
-                                 <div className="md:col-span-2">
+                                     
+                                     {/* ✅ FIX: Moved to Full Width Layout */}
+                                     <div className="md:col-span-2">
                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                     <div className="flex flex-wrap gap-2">
                                         {relatedWords.length > 0 ? relatedWords.map((w, i) => (
@@ -1301,7 +1314,7 @@ ${sentencesStr}
                                 <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
                             )}
                         </div>
-                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
+                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto"><div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div><h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2><p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">{reviewFilterLang !== 'all' ? `No more ${reviewFilterLang.toUpperCase()} words to review.` : "Your Review Queue is empty."}</p><div className="flex gap-3 justify-center"><button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button><button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button></div></div>
