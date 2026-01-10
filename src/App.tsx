@@ -24,7 +24,7 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // ✅ FIX 1: Switched to 'flash' for fastest TTS latency
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-flash"; // Was "pro-preview-tts" (too slow)
+const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // Was "pro-preview-tts" (too slow)
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
 const userFirebaseConfig = {
