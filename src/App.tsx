@@ -22,12 +22,10 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// 模型配置
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
-// Firebase Config
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -291,7 +289,7 @@ export default function App() {
   const [generatedIndex, setGeneratedIndex] = useState(0);
   const [entry, setEntry] = useState<VocabEntry | null>(null);
   
-  // ✅ NEW: History Stack for Navigation
+  // History Stack
   const [history, setHistory] = useState<VocabEntry[]>([]);
     
   // UI States
@@ -583,14 +581,26 @@ ${sentencesStr}
     }
     setIsGenerating(true); setMainTab('dictionary');
 
-    const targetLangObj = LANGUAGES.find(l => l.code === (overrideWord ? entry?.lang || 'en' : currentLang)); 
-    const targetLangName = targetLangObj?.label || "English";
-    const langCode = targetLangObj?.code || "en";
+    // ✅ FIX: Auto-Detect Logic (Italian -> English Bug Fix)
+    const shouldUseAuto = isAutoLang && !overrideWord;
+    
+    let targetLangCode = "en";
+    let targetLangLabel = "English";
 
-    // ✅ MODIFICATION: "Daily" -> "Common"
+    if (!shouldUseAuto) {
+        const targetLangObj = LANGUAGES.find(l => l.code === (overrideWord ? entry?.lang || 'en' : currentLang)); 
+        targetLangLabel = targetLangObj?.label || "English";
+        targetLangCode = targetLangObj?.code || "en";
+    }
+
+    // ✅ MODIFICATION: "Daily" -> "Common" & Enforced English Theme for Matching
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
-    Target Language: ${targetLangName} (${langCode}).
+    
+    ${shouldUseAuto 
+      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code.` 
+      : `Target Language: ${targetLangLabel} (${targetLangCode}).`}
+    
     User Language: Chinese (Simplified).
 
     RULES:
@@ -602,28 +612,29 @@ ${sentencesStr}
        - Structure: {"type": "Common" or "Advanced", "target": "...", "translation": "..."}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
-    6. **IMPORTANT FOR JAPANESE/CHINESE**: 
+    6. "theme": MUST be a broad, standardized category in ENGLISH (e.g., "Animals", "Business", "Emotion", "Nature").
+    7. **IMPORTANT FOR JAPANESE/CHINESE**: 
        - "word" field MUST use Kanji/Hanzi (e.g., '猫').
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
     
     JSON SCHEMA:
     {
       "word": "${target}",
-      "lang": "${langCode}",
+      "lang": "${shouldUseAuto ? "detected_code" : targetLangCode}",
       "pos": "string",
       "meaning": "string (CN)",
       "level": "string",
-      "theme": "string (1-2 words)",
+      "theme": "string (English)",
       "sentences": [
-        {"type": "Common", "target": "string (${targetLangName})", "translation": "string (CN)"},
-        {"type": "Advanced", "target": "string (${targetLangName})", "translation": "string (CN)"}
+        {"type": "Common", "target": "string", "translation": "string (CN)"},
+        {"type": "Advanced", "target": "string", "translation": "string (CN)"}
       ],
       "synonyms": ["string", "string"],
       "antonyms": ["string"],
       "crossRefs": [{"lang": "code", "word": "string"}],
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
-      "pronunciation": "string (optional but required for JP/ZH)"
+      "pronunciation": "string (optional)"
     }`;
 
     const prompt = inputMode === 'word' || overrideWord 
@@ -642,19 +653,19 @@ ${sentencesStr}
     }
   };
 
-  // ✅ NEW: Handle Jump with History
+  // ✅ Handle Jump with History
   const handleJump = (word: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
       handleGenerate(word);
   };
 
-  // ✅ NEW: Handle Back
+  // ✅ Handle Back
   const handleBack = () => {
       if (history.length === 0) return;
       const previous = history[history.length - 1];
       setHistory(prev => prev.slice(0, -1));
       setEntry(previous);
-      setGeneratedEntries([previous]); // Sync visual state
+      setGeneratedEntries([previous]); 
       setGeneratedIndex(0);
   };
 
@@ -722,14 +733,12 @@ ${sentencesStr}
       }
   };
 
-  // ✅ MODIFICATION: Silent Save (No Confirmation for Merge)
   const handleSmartSave = async () => {
     if (!entry) return;
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
     if (exist) {
-      // ✅ Removed Confirm Dialog -> Auto Merge
       const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
       await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
       alert("Merged & Updated!"); 
@@ -832,17 +841,29 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ MODIFICATION: Cross-Lingual Related Words (Semantics over Language)
+  // ✅ FIX: Semantic Context (Language Agnostic + Synonyms + CrossRefs)
   const relatedWords = useMemo(() => {
     if (!entry) return [];
     const scored = savedItems
         .filter(item => item.id !== (isCurrentSaved?.id || '')) 
         .map(item => {
             let score = 0;
-            // Removed: if (item.entry.lang !== entry.lang) return { item, score: -1 }; 
-            if (item.entry.theme === entry.theme) score += 3; // Theme is King
+            // 1. Semantic Check (CrossRefs & Synonyms) - Highest Priority
+            const isSemanticMatch = 
+                item.entry.crossRefs?.some(r => r.word.toLowerCase() === entry.word.toLowerCase()) ||
+                entry.crossRefs?.some(r => r.word.toLowerCase() === item.entry.word.toLowerCase()) ||
+                item.entry.synonyms?.some(s => s.toLowerCase() === entry.word.toLowerCase()) ||
+                entry.synonyms?.some(s => s.toLowerCase() === item.entry.word.toLowerCase());
+            
+            if (isSemanticMatch) score += 10;
+
+            // 2. Theme Check (Language Agnostic if English theme is used)
+            if (item.entry.theme && entry.theme && item.entry.theme.toLowerCase() === entry.theme.toLowerCase()) score += 3;
+            
+            // 3. Metadata Match
             if (item.entry.pos === entry.pos) score += 1;
             if (item.entry.level === entry.level) score += 1;
+            
             return { item, score };
         })
         .filter(x => x.score > 0)
@@ -965,11 +986,12 @@ ${sentencesStr}
               <div className="lg:col-span-8 min-w-0">
                 {entry ? (
                     <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
-                        <div className="bg-slate-50/80 p-6 md:p-8 border-b border-slate-100 relative">
-                             {/* ✅ NEW: Back Button (Only visible if history exists) */}
+                        {/* ✅ FIX: Conditional Padding for Back Button */}
+                        <div className={`bg-slate-50/80 p-6 md:p-8 border-b border-slate-100 relative ${history.length > 0 ? 'pl-14 pt-12 md:pl-8 md:pt-8' : ''}`}>
+                             {/* ✅ NEW: Back Button */}
                              {history.length > 0 && (
-                                 <button onClick={handleBack} className="absolute top-6 left-6 z-10 p-2 bg-white/50 backdrop-blur border border-slate-200 rounded-full hover:bg-white text-slate-500 transition-all shadow-sm">
-                                     <ArrowLeft size={16} />
+                                 <button onClick={handleBack} className="absolute top-4 left-4 z-20 p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-500 transition-all shadow-sm group">
+                                     <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
                                  </button>
                              )}
 
@@ -1027,7 +1049,7 @@ ${sentencesStr}
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry.synonyms || []).length > 0 ? entry.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry.antonyms || []).length > 0 ? entry.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      
-                                     {/* ✅ MODIFICATION: Cross-Lingual Semantic Related Words */}
+                                     {/* ✅ Contextually Related */}
                                      <div>
                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                         <div className="flex flex-wrap gap-2">
