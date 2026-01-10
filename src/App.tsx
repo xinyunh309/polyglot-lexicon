@@ -64,18 +64,29 @@ const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
 const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
-type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh';
+type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id';
 
+// ✅ MODIFICATION: Added Korean and Indonesian
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
-  { code: 'fr', label: 'FR', voiceCode: 'fr-FR', flag: '🇫🇷' },
-  { code: 'de', label: 'DE', voiceCode: 'de-DE', flag: '🇩🇪' },
-  { code: 'ja', label: 'JP', voiceCode: 'ja-JP', flag: '🇯🇵' },
   { code: 'en', label: 'EN', voiceCode: 'en-US', flag: '🇬🇧' },
+  { code: 'zh', label: 'ZH', voiceCode: 'zh-CN', flag: '🇨🇳' },
+  { code: 'ja', label: 'JP', voiceCode: 'ja-JP', flag: '🇯🇵' },
+  { code: 'ko', label: 'KR', voiceCode: 'ko-KR', flag: '🇰🇷' }, // New
+  { code: 'de', label: 'DE', voiceCode: 'de-DE', flag: '🇩🇪' },
+  { code: 'fr', label: 'FR', voiceCode: 'fr-FR', flag: '🇫🇷' },
   { code: 'es', label: 'ES', voiceCode: 'es-ES', flag: '🇪🇸' },
   { code: 'it', label: 'IT', voiceCode: 'it-IT', flag: '🇮🇹' },
-  { code: 'zh', label: 'ZH', voiceCode: 'zh-CN', flag: '🇨🇳' },
+  { code: 'id', label: 'ID', voiceCode: 'id-ID', flag: '🇮🇩' }, // New
 ];
+
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
+
+// ✅ FIX: Robust Flag Helper
+const getFlag = (langCode: string) => {
+    if (!langCode) return '🌐';
+    const normalized = langCode.toLowerCase().split('-')[0]; // Handle 'zh-CN' -> 'zh', 'JP' -> 'jp'
+    return FLAGS[normalized] || '🌐';
+};
 
 // ==========================================
 // 2. 工具函数 (Utilities)
@@ -116,10 +127,8 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   }
 };
 
-// 新增：合并多个 Base64 PCM 片段 (用于对话模式)
 const concatAudioParts = (parts: string[]) => {
   try {
-    // 解码所有部分并合并到 Uint8Array
     const arrays = parts.map(part => {
       const bin = atob(part);
       const arr = new Uint8Array(bin.length);
@@ -135,10 +144,8 @@ const concatAudioParts = (parts: string[]) => {
       offset += arr.length;
     });
 
-    // 重新编码为 Base64 以复用 pcmToWav
     let binary = '';
     const len = result.byteLength;
-    // 为避免堆栈溢出，分块处理
     for (let i = 0; i < len; i += 1024) {
       binary += String.fromCharCode.apply(null, Array.from(result.subarray(i, Math.min(i + 1024, len))));
     }
@@ -231,7 +238,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     
     setIsLoading(true);
     try {
-      // 修复：直接发送文本，不带 Prompt 指令，提速 50%
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -503,24 +509,20 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio (Fixed: Dialogue Mode & Speed Optimization)
+  // ✅ Playground Audio
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       try {
-          // 如果是对话模式，按换行切分；否则整体作为一段
           const lines = ttsGender === 'dialogue' 
             ? playgroundInput.split('\n').filter(l => l.trim()) 
             : [playgroundInput];
 
           const audioParts: string[] = [];
 
-          // 串行生成以保证对话顺序稳定，同时处理多行
           for (let i = 0; i < lines.length; i++) {
              const line = lines[i];
-             // 对话模式下：偶数行女声(Kore)，奇数行男声(Fenrir)
-             // 普通模式下：根据 ttsGender 决定
              let voiceName = 'Kore';
              if (ttsGender === 'dialogue') {
                  voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
@@ -528,7 +530,6 @@ ${sentencesStr}
                  voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
              }
 
-             // 优化：去除 "Say in..." 指令，直接发文本，提升响应速度
              if (line.length < 1) continue;
 
              const response = await fetch(
@@ -537,7 +538,7 @@ ${sentencesStr}
                    method: 'POST',
                    headers: { 'Content-Type': 'application/json' },
                    body: JSON.stringify({
-                       contents: [{ parts: [{ text: line }] }], // 直接发送文本
+                       contents: [{ parts: [{ text: line }] }], 
                        generationConfig: { 
                            responseModalities: ["AUDIO"], 
                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
@@ -553,14 +554,12 @@ ${sentencesStr}
           }
           
           if (audioParts.length > 0) {
-              // 合并 PCM 数据
               const mergedBase64 = audioParts.length === 1 ? audioParts[0] : concatAudioParts(audioParts);
               const wavUrl = pcmToWav(mergedBase64);
               
               if (action === 'play') {
                   new Audio(wavUrl).play();
               } else {
-                  // Download Logic
                   const link = document.createElement('a');
                   link.href = wavUrl;
                   link.download = `polyglot_${playgroundLang}_${ttsGender}_${Date.now()}.wav`;
@@ -577,7 +576,7 @@ ${sentencesStr}
       }
   };
 
-  // --- Dictionary AI Logic (Revised: Daily/Advanced & Accuracy Fix) ---
+  // --- Dictionary AI Logic ---
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
@@ -587,12 +586,11 @@ ${sentencesStr}
     }
     setIsGenerating(true); setMainTab('dictionary');
 
-    // 获取目标语言全称
     const targetLangObj = LANGUAGES.find(l => l.code === (overrideWord ? entry?.lang || 'en' : currentLang)); 
     const targetLangName = targetLangObj?.label || "English";
     const langCode = targetLangObj?.code || "en";
 
-    // 核心 Prompt 优化 (恢复 Daily/Advanced 逻辑 + 强校验)
+    // ✅ MODIFICATION: Updated Prompt for Japanese Kanji & Daily/Advanced
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     Target Language: ${targetLangName} (${langCode}).
@@ -607,6 +605,9 @@ ${sentencesStr}
        - Structure: {"type": "Daily" or "Advanced", "target": "...", "translation": "..."}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
+    6. **IMPORTANT FOR JAPANESE/CHINESE**: 
+       - "word" field MUST use Kanji/Hanzi (e.g., '猫').
+       - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
     
     JSON SCHEMA:
     {
@@ -624,7 +625,8 @@ ${sentencesStr}
       "antonyms": ["string"],
       "crossRefs": [{"lang": "code", "word": "string"}],
       "idiom": "string (optional)",
-      "idiomMeaning": "string (CN)"
+      "idiomMeaning": "string (CN)",
+      "pronunciation": "string (optional but required for JP/ZH)"
     }`;
 
     const prompt = inputMode === 'word' || overrideWord 
@@ -761,7 +763,6 @@ ${sentencesStr}
       try {
           const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
           
-          // 尝试调用 Google Imagen 4.0
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, 
             { 
@@ -775,10 +776,8 @@ ${sentencesStr}
           );
           
           if (!response.ok) {
-              // ❌ 如果 Imagen 失败 (403/404)，自动切换到 Pollinations (免费)
               console.warn("Imagen API failed/restricted, switching to Pollinations fallback.");
               const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
-              // 预加载检查
               const img = new Image();
               img.src = pollinationsUrl;
               img.onload = () => {
@@ -789,7 +788,6 @@ ${sentencesStr}
                   throw new Error("Fallback failed");
               };
           } else {
-             // ✅ 如果 Imagen 成功
              const data = await response.json();
              if (data.predictions?.[0]?.bytesBase64Encoded) {
                  setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
@@ -797,7 +795,6 @@ ${sentencesStr}
              setIsGeneratingImage(false);
           }
       } catch (e) { 
-          // 最后的保底
           const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
           setGeneratedImage(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`);
           setIsGeneratingImage(false);
@@ -822,23 +819,21 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // 新增：Contextually Related Words
   const relatedWords = useMemo(() => {
     if (!entry) return [];
-    // 算法：Theme 匹配 +3分, POS 匹配 +1分, Level 匹配 +1分
     const scored = savedItems
-        .filter(item => item.id !== (isCurrentSaved?.id || '')) // 排除自己
+        .filter(item => item.id !== (isCurrentSaved?.id || '')) 
         .map(item => {
             let score = 0;
-            if (item.entry.lang !== entry.lang) return { item, score: -1 }; // 语言不同直接忽略
+            if (item.entry.lang !== entry.lang) return { item, score: -1 }; 
             if (item.entry.theme === entry.theme) score += 3;
             if (item.entry.pos === entry.pos) score += 1;
             if (item.entry.level === entry.level) score += 1;
             return { item, score };
         })
         .filter(x => x.score > 0)
-        .sort((a, b) => b.score - a.score) // 降序
-        .slice(0, 5); // 取前5个
+        .sort((a, b) => b.score - a.score) 
+        .slice(0, 5); 
     
     return scored.map(x => x.item.entry);
   }, [entry, savedItems, isCurrentSaved]);
@@ -889,7 +884,7 @@ ${sentencesStr}
               </button>
               {!isAutoLang && (
                   <select value={currentLang} onChange={(e) => setCurrentLang(e.target.value as Language)} className="text-xs font-bold bg-transparent outline-none text-slate-600">
-                      {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}
+                      {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                   </select>
               )}
               <button onClick={showEntryJson} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Export JSON">
@@ -969,7 +964,7 @@ ${sentencesStr}
                              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                                  <div className="w-full min-w-0">
                                      <div className="flex flex-wrap items-center gap-2 mb-3">
-                                         <span className="text-3xl drop-shadow-sm mr-1">{FLAGS[entry.lang]}</span>
+                                         <span className="text-3xl drop-shadow-sm mr-1">{getFlag(entry.lang)}</span>
                                          <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm" onClick={()=>handleTagJump('lang', entry.lang)} title="Filter by Language"/>
                                          <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm" onClick={()=>handleTagJump('pos', entry.pos)} title="Filter by POS"/>
                                          {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700"/>}
@@ -984,7 +979,7 @@ ${sentencesStr}
                                      </div>
 
                                      <div className="flex items-center gap-4 mt-4 flex-wrap">
-                                         {(entry.lang === 'en' || entry.lang === 'ja') && entry.pronunciation && (
+                                         {entry.pronunciation && (
                                             <span className="text-slate-500 font-mono text-lg tracking-wide">{entry.pronunciation}</span>
                                          )}
                                          <TTSButton text={entry.word} lang={entry.lang} size={22} />
@@ -1011,7 +1006,7 @@ ${sentencesStr}
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry.synonyms || []).length > 0 ? entry.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry.antonyms || []).length > 0 ? entry.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      
-                                     {/* 相关词模块 */}
+                                     {/* ✅ FIX: Added Safe Access to 'meaning' with fallback to empty string */}
                                      <div>
                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                         <div className="flex flex-wrap gap-2">
@@ -1019,7 +1014,7 @@ ${sentencesStr}
                                                 <button key={`rel-${i}`} onClick={() => handleGenerate(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
                                                     <div className="flex flex-col">
                                                         <span className="text-xs font-bold text-slate-700">{w.word}</span>
-                                                        <span className="text-[10px] text-slate-400">{w.meaning.substring(0, 10)}...</span>
+                                                        <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
                                                     </div>
                                                     {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
                                                 </button>
@@ -1027,7 +1022,7 @@ ${sentencesStr}
                                         </div>
                                      </div>
                                  </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleGenerate(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{FLAGS[ref.lang]}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleGenerate(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                              </div>
                              <div className="pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
@@ -1054,7 +1049,7 @@ ${sentencesStr}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)]">
                 {/* Left: Input & TTS */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2><select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}</select></div>
+                    <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2><select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">{LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select></div>
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
                     
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -1095,7 +1090,7 @@ ${sentencesStr}
                 {/* Filters */}
                 <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-3 items-center">
                       <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Languages</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}</select>
+                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Languages</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select>
                       <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">All Levels</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
                       <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">All POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
                       <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">All Themes</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
@@ -1109,7 +1104,7 @@ ${sentencesStr}
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
                                 <div key={item.id} onClick={()=>{setEntry(item.entry); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
-                                    <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{FLAGS[item.entry.lang]}</div>
+                                    <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
                                     <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
                                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
                                     <div className="flex flex-wrap gap-2 mt-auto"><span className="text-[10px] px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600 uppercase tracking-wide">{formatPOS(item.entry.pos)}</span><span className="text-[10px] px-2 py-1 bg-amber-50 text-amber-700 rounded-md font-bold">{item.entry.level}</span><span className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded-md truncate max-w-[100px]">{item.entry.theme}</span></div>
@@ -1127,11 +1122,11 @@ ${sentencesStr}
              <div className="max-w-4xl mx-auto h-full flex flex-col justify-center pb-10 min-w-0">
                 <div className="h-14 bg-white rounded-t-3xl border-b border-slate-100 flex items-center justify-between px-6 shrink-0 shadow-sm mb-4">
                     <div className="flex items-center gap-2"><span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">{reviewQueue.length > 0 ? `Queue: ${reviewQueue.length}` : 'Queue Empty'}</span></div>
-                    <div className="flex items-center gap-2"><span className="text-xs font-bold text-slate-400">Filter:</span><select className="text-xs font-bold bg-transparent outline-none text-slate-600 border-b border-slate-300 pb-0.5 cursor-pointer" value={reviewFilterLang} onChange={(e) => setReviewFilterLang(e.target.value as any)}><option value="all">All</option>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.code.toUpperCase()}</option>)}</select></div>
+                    <div className="flex items-center gap-2"><span className="text-xs font-bold text-slate-400">Filter:</span><select className="text-xs font-bold bg-transparent outline-none text-slate-600 border-b border-slate-300 pb-0.5 cursor-pointer" value={reviewFilterLang} onChange={(e) => setReviewFilterLang(e.target.value as any)}><option value="all">All</option>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.code.toUpperCase()}</option>)}</select></div>
                 </div>
                 {reviewQueue.length > 0 && reviewQueue[0] ? (
                     <div className="w-full md:w-[600px] mx-auto min-h-[400px] relative bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden cursor-pointer flex flex-col" onClick={() => setIsReviewFlipped(!isReviewFlipped)}>
-                        <div className="h-12 bg-slate-50 border-b border-slate-100 flex items-center justify-end px-6 shrink-0"><span className="text-2xl">{FLAGS[reviewQueue[0].entry.lang]}</span></div>
+                        <div className="h-12 bg-slate-50 border-b border-slate-100 flex items-center justify-end px-6 shrink-0"><span className="text-2xl">{getFlag(reviewQueue[0].entry.lang)}</span></div>
                         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
                             {!isReviewFlipped ? (
                                 <div className="flex flex-col items-center animate-in fade-in w-full"><h2 className="font-serif font-bold text-slate-900 mb-8 text-center break-words leading-tight w-full px-4" style={{ fontSize: 'clamp(2rem, 8vw, 4rem)' }}>{reviewQueue[0].entry.word}</h2><div onClick={e=>e.stopPropagation()} className="p-4 bg-indigo-50 rounded-full hover:scale-110 transition-transform mb-12"><TTSButton text={reviewQueue[0].entry.word} lang={reviewQueue[0].entry.lang} size={32}/></div><p className="text-sm text-slate-400 font-medium flex items-center gap-2 animate-bounce"><RotateCcw size={14}/> Tap to reveal</p></div>
