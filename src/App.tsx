@@ -22,8 +22,9 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
+// ✅ FIX 1: Switched to 'flash' for fastest TTS latency
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
+const GEMINI_TTS_MODEL = "gemini-2.5-flash"; // Was "pro-preview-tts" (too slow)
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
 const userFirebaseConfig = {
@@ -650,7 +651,7 @@ ${sentencesStr}
         const parsed = JSON.parse(result);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
         
-        // ✅ FIX: Robust Data Sanitization to Prevent White Screen
+        // Robust Data Sanitization to Prevent White Screen
         const validEntries = entries.map((e: any) => ({ 
             ...e, 
             sentences: Array.isArray(e.sentences) ? e.sentences : [], 
@@ -751,7 +752,7 @@ ${sentencesStr}
       }
   };
 
-  // ✅ MODIFICATION: Silent Save with UI Feedback (No Alerts)
+  // ✅ FIX: Silent Save
   const handleSmartSave = async () => {
     if (!entry) return;
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
@@ -802,12 +803,14 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
+  // ✅ FIX: Improved Image Prompt
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
       setIsGeneratingImage(true);
       try {
-          const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
+          // Concrete prompt for better results
+          const prompt = `A concrete, realistic scene depicting the meaning of '${entry.word}': ${entry.meaning}. High quality, clear details, cinematic lighting.`;
           
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, 
@@ -841,7 +844,7 @@ ${sentencesStr}
              setIsGeneratingImage(false);
           }
       } catch (e) { 
-          const prompt = `Minimalist vector illustration of concept '${entry.word}' (${entry.meaning}). White background, clean lines.`;
+          const prompt = `Detailed, realistic scene representing the concept: '${entry.word}' (${entry.meaning}). High quality, cinematic lighting, 4k.`;
           setGeneratedImage(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`);
           setIsGeneratingImage(false);
       }
