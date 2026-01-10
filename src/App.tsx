@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
+  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers, Mic
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -22,7 +22,6 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Using Pro Preview TTS for stability & quality
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
@@ -339,7 +338,8 @@ export default function App() {
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
    
   // Playground 音频状态
-  const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
+  // ✅ FIX: Simplified to 3 intelligent modes
+  const [ttsMode, setTtsMode] = useState<'female' | 'male' | 'auto'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   const playgroundEndRef = useRef<HTMLDivElement>(null);
@@ -527,91 +527,82 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ FIX: Optimized Dialogue Audio Generation
+  // ✅ FIX: TRUE Smart Dialogue (Auto-Role Recognition, No delays)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       try {
-          const lines = ttsGender === 'dialogue' 
-            ? playgroundInput.split('\n').filter(l => l.trim()) 
-            : [playgroundInput];
-
+          const lines = playgroundInput.split('\n').filter(l => l.trim());
           const audioParts: string[] = [];
           
-          // Role management
+          // Smart Role Mapping
           const roleVoiceMap = new Map<string, string>();
-          let nextVoiceIndex = 0; // 0: Female, 1: Male
-          const voices = ['Kore', 'Fenrir']; 
+          let nextVoiceIndex = 0; 
+          const voices = ['Kore', 'Fenrir']; // Female, Male
 
-          // Process lines serially
           for (let i = 0; i < lines.length; i++) {
              let line = lines[i];
+             
+             // 1. Strip Name/Prefix
+             const match = line.match(/^([^*:：\n]+)(?:\*\*)?[:：]\s*(.+)/);
+             let rawName = "";
              let textToSpeak = line;
-             let voiceName = 'Kore';
 
-             if (ttsGender === 'dialogue') {
-                 // 1. Improved Regex: Handles **Name**: and Name: formats
-                 // Captures the name (Group 1) and the content (Group 2)
-                 // Removes asterisks from the name automatically
-                 const match = line.match(/^\s*(?:\*\*)?([^*:：]+)(?:\*\*)?[:：]\s*(.+)/);
-                 
-                 if (match) {
-                     const rawName = match[1].trim(); // Name without **
-                     const content = match[2].trim();
-                     
-                     textToSpeak = content; // Only read the content
-                     
-                     // Assign consistent voice to this name
+             // Extract clean text and name if exists
+             if (match) {
+                 rawName = match[1].replace(/\*/g, '').trim(); 
+                 textToSpeak = match[2].trim();
+             } else {
+                 textToSpeak = line.replace(/^.*[:：]\s*/, '').trim(); 
+             }
+             
+             if (textToSpeak.length < 1) continue;
+
+             // 2. Decide Voice
+             let voiceName = 'Kore';
+             
+             if (ttsMode === 'auto') {
+                 if (rawName) {
+                     // Known Role logic
                      if (!roleVoiceMap.has(rawName)) {
-                         // First name = Female (Kore), Second = Male (Fenrir), then alternate
                          roleVoiceMap.set(rawName, voices[nextVoiceIndex % 2]);
                          nextVoiceIndex++;
                      }
                      voiceName = roleVoiceMap.get(rawName)!;
                  } else {
-                     // Fallback: Alternate voices based on line number if format is strictly not met
+                     // No name fallback: Alternating
                      voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
                  }
              } else {
-                 // Single speaker mode
-                 voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
+                 // Force Manual
+                 voiceName = ttsMode === 'female' ? 'Kore' : 'Fenrir';
              }
 
-             if (textToSpeak.length < 1) continue;
+             // 3. Fire Request (NO DELAY as requested)
+             const response = await fetch(
+               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+               {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                       contents: [{ parts: [{ text: textToSpeak }] }], 
+                       generationConfig: { 
+                           responseModalities: ["AUDIO"], 
+                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                       }
+                   }),
+               }
+             );
 
-             // 2. Anti-Rate Limit Delay (Fixes "Stopped halfway")
-             // Wait 500ms between requests to prevent 429 Errors
-             if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
-
-             try {
-                 const response = await fetch(
-                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-                   {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({
-                           contents: [{ parts: [{ text: textToSpeak }] }], 
-                           generationConfig: { 
-                               responseModalities: ["AUDIO"], 
-                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                           }
-                       }),
-                   }
-                 );
-
-                 if (!response.ok) {
-                     console.warn(`Line ${i} failed: ${response.status}`);
-                     continue; 
-                 }
-                 
-                 const data = await response.json();
-                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                 if (part) audioParts.push(part);
-
-             } catch (lineError) {
-                 console.error(`Error processing line ${i}:`, lineError);
+             if (!response.ok) {
+                 console.warn(`Line ${i} failed. Skipping.`);
+                 continue;
              }
+
+             const data = await response.json();
+             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+             if (part) audioParts.push(part);
           }
           
           if (audioParts.length > 0) {
@@ -619,8 +610,7 @@ ${sentencesStr}
               const wavUrl = pcmToWav(mergedBase64);
               
               if (action === 'play') {
-                  const audio = new Audio(wavUrl);
-                  audio.play();
+                  new Audio(wavUrl).play();
               } else {
                   const link = document.createElement('a');
                   link.href = wavUrl;
@@ -629,12 +619,10 @@ ${sentencesStr}
                   link.click();
                   document.body.removeChild(link);
               }
-          } else {
-              alert("Could not generate audio. Please check your text or API quota.");
           }
       } catch (e) {
           console.error(e);
-          alert("Audio workflow failed.");
+          alert("Audio generation error.");
       } finally {
           setIsProcessingAudio(false);
       }
@@ -661,7 +649,7 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and Comprehensive Conjugation
+    // ✅ FIX: Conjugation Prompt - Passato Prossimo/Remoto & Participles
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
@@ -687,10 +675,10 @@ ${sentencesStr}
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
     9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
     10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
-    11. **Conjugations (IMPORTANT)**: If it is a VERB, provide a DETAILED 'conjugations' array.
-       - Include Indicative: Present, Imperfect, Future, Compound Past (e.g., Passato Prossimo), Remote/Simple Past (e.g., Passato Remoto).
-       - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
-       - Include: Participles (Present & Past) grouped under a single "Participles" section.
+    11. **Conjugations (VERBS ONLY)**: 
+       - Indicative: Present, Imperfect, Future, Compound Past (Passato Prossimo/Passé Composé/Perfect), Remote/Simple Past (Passato Remoto/Pretérito Indefinido/Präteritum).
+       - Subjunctive (Present, Imperfect), Conditional, Imperative.
+       - **Participles**: Group both Past and Present participles under one item named "Participles/分词".
     
     JSON SCHEMA:
     {
@@ -942,7 +930,6 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Improved Algorithm + Weight Tuning (Theme+Level)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
@@ -1225,9 +1212,9 @@ ${sentencesStr}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
                         {/* Gender Toggle (With Dialogue Support) */}
                         <div className="flex bg-white p-1 rounded-lg border border-slate-200">
-                            <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
-                            <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
-                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dialogue</button>
+                            <button onClick={()=>setTtsMode('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
+                            <button onClick={()=>setTtsMode('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
+                            <button onClick={()=>setTtsMode('auto')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='auto'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Auto</button>
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-2">
