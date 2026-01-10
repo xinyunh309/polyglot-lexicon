@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Zap, Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap, Download, User 
+  Bot, GraduationCap, Download, User, ArrowLeft 
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -66,25 +66,23 @@ const requestCache = new Map<string, string>();
 const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id';
 
-// ✅ MODIFICATION: Added Korean and Indonesian
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
   { code: 'en', label: 'EN', voiceCode: 'en-US', flag: '🇬🇧' },
   { code: 'zh', label: 'ZH', voiceCode: 'zh-CN', flag: '🇨🇳' },
   { code: 'ja', label: 'JP', voiceCode: 'ja-JP', flag: '🇯🇵' },
-  { code: 'ko', label: 'KR', voiceCode: 'ko-KR', flag: '🇰🇷' }, // New
+  { code: 'ko', label: 'KR', voiceCode: 'ko-KR', flag: '🇰🇷' },
   { code: 'de', label: 'DE', voiceCode: 'de-DE', flag: '🇩🇪' },
   { code: 'fr', label: 'FR', voiceCode: 'fr-FR', flag: '🇫🇷' },
   { code: 'es', label: 'ES', voiceCode: 'es-ES', flag: '🇪🇸' },
   { code: 'it', label: 'IT', voiceCode: 'it-IT', flag: '🇮🇹' },
-  { code: 'id', label: 'ID', voiceCode: 'id-ID', flag: '🇮🇩' }, // New
+  { code: 'id', label: 'ID', voiceCode: 'id-ID', flag: '🇮🇩' },
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
 
-// ✅ FIX: Robust Flag Helper
 const getFlag = (langCode: string) => {
     if (!langCode) return '🌐';
-    const normalized = langCode.toLowerCase().split('-')[0]; // Handle 'zh-CN' -> 'zh', 'JP' -> 'jp'
+    const normalized = langCode.toLowerCase().split('-')[0];
     return FLAGS[normalized] || '🌐';
 };
 
@@ -292,6 +290,9 @@ export default function App() {
   const [generatedEntries, setGeneratedEntries] = useState<VocabEntry[]>([]);
   const [generatedIndex, setGeneratedIndex] = useState(0);
   const [entry, setEntry] = useState<VocabEntry | null>(null);
+  
+  // ✅ NEW: History Stack for Navigation
+  const [history, setHistory] = useState<VocabEntry[]>([]);
     
   // UI States
   const [inputWord, setInputWord] = useState('');
@@ -469,9 +470,7 @@ ${sentencesStr}
     const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
     let systemPrompt = "";
     
-    // ✅ RESTORED FULL PROMPTS FROM AI STUDIO
     if (playgroundMode === 'learning') {
-        // Mode A: Default Learning
         systemPrompt = `
             You are a helpful language tutor for ${langLabel}.
             The user provided this context text: "${playgroundInput.substring(0, 500)}...".
@@ -482,8 +481,6 @@ ${sentencesStr}
             - Respond in ${langLabel} primarily, but provide Chinese hints if the user seems stuck or asks.
         `;
     } else {
-        // Mode B: Reinforcement
-        // Get random words from library for this language
         const validWords = savedItems
             .filter(i => i.entry.lang === playgroundLang)
             .map(i => i.entry.word);
@@ -590,7 +587,7 @@ ${sentencesStr}
     const targetLangName = targetLangObj?.label || "English";
     const langCode = targetLangObj?.code || "en";
 
-    // ✅ MODIFICATION: Updated Prompt for Japanese Kanji & Daily/Advanced
+    // ✅ MODIFICATION: "Daily" -> "Common"
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     Target Language: ${targetLangName} (${langCode}).
@@ -600,9 +597,9 @@ ${sentencesStr}
     1. "meaning": Must be a SHORT, CONCISE definition in Chinese (Max 15 words). NOT an explanation.
     2. "pos": Return standard part of speech (e.g., noun, verb) in English.
     3. "sentences": You MUST provide exactly 2 sentences:
-       - Sentence 1: "Daily" - A common, conversational, or simple usage.
+       - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
-       - Structure: {"type": "Daily" or "Advanced", "target": "...", "translation": "..."}
+       - Structure: {"type": "Common" or "Advanced", "target": "...", "translation": "..."}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. **IMPORTANT FOR JAPANESE/CHINESE**: 
@@ -618,7 +615,7 @@ ${sentencesStr}
       "level": "string",
       "theme": "string (1-2 words)",
       "sentences": [
-        {"type": "Daily", "target": "string (${targetLangName})", "translation": "string (CN)"},
+        {"type": "Common", "target": "string (${targetLangName})", "translation": "string (CN)"},
         {"type": "Advanced", "target": "string (${targetLangName})", "translation": "string (CN)"}
       ],
       "synonyms": ["string", "string"],
@@ -643,6 +640,22 @@ ${sentencesStr}
         setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); if (validEntries[0]?.lang) setCurrentLang(validEntries[0].lang as Language);
       } catch (e) { alert("Failed to parse AI response."); }
     }
+  };
+
+  // ✅ NEW: Handle Jump with History
+  const handleJump = (word: string) => {
+      if (entry) setHistory(prev => [...prev, entry]);
+      handleGenerate(word);
+  };
+
+  // ✅ NEW: Handle Back
+  const handleBack = () => {
+      if (history.length === 0) return;
+      const previous = history[history.length - 1];
+      setHistory(prev => prev.slice(0, -1));
+      setEntry(previous);
+      setGeneratedEntries([previous]); // Sync visual state
+      setGeneratedIndex(0);
   };
 
   const handleSmartImport = async () => {
@@ -709,16 +722,17 @@ ${sentencesStr}
       }
   };
 
+  // ✅ MODIFICATION: Silent Save (No Confirmation for Merge)
   const handleSmartSave = async () => {
     if (!entry) return;
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
     if (exist) {
-      if (!confirm(`Merge "${wordToSave}"?`)) return;
+      // ✅ Removed Confirm Dialog -> Auto Merge
       const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
       await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
-      alert("Merged!");
+      alert("Merged & Updated!"); 
     } else {
       const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
       await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
@@ -755,7 +769,6 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
-  // ✅ Image Generation: Imagen 4.0 First, Pollinations Fallback
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
@@ -819,14 +832,15 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
+  // ✅ MODIFICATION: Cross-Lingual Related Words (Semantics over Language)
   const relatedWords = useMemo(() => {
     if (!entry) return [];
     const scored = savedItems
         .filter(item => item.id !== (isCurrentSaved?.id || '')) 
         .map(item => {
             let score = 0;
-            if (item.entry.lang !== entry.lang) return { item, score: -1 }; 
-            if (item.entry.theme === entry.theme) score += 3;
+            // Removed: if (item.entry.lang !== entry.lang) return { item, score: -1 }; 
+            if (item.entry.theme === entry.theme) score += 3; // Theme is King
             if (item.entry.pos === entry.pos) score += 1;
             if (item.entry.level === entry.level) score += 1;
             return { item, score };
@@ -952,6 +966,13 @@ ${sentencesStr}
                 {entry ? (
                     <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
                         <div className="bg-slate-50/80 p-6 md:p-8 border-b border-slate-100 relative">
+                             {/* ✅ NEW: Back Button (Only visible if history exists) */}
+                             {history.length > 0 && (
+                                 <button onClick={handleBack} className="absolute top-6 left-6 z-10 p-2 bg-white/50 backdrop-blur border border-slate-200 rounded-full hover:bg-white text-slate-500 transition-all shadow-sm">
+                                     <ArrowLeft size={16} />
+                                 </button>
+                             )}
+
                              {generatedEntries.length > 1 && (
                                 <div className="flex justify-center mb-4">
                                     <div className="flex items-center bg-white border border-slate-200 rounded-full px-3 py-1 shadow-sm">
@@ -1003,17 +1024,17 @@ ${sentencesStr}
                              <div className="space-y-4">{(entry.sentences || []).map((s, i) => (<div key={i} className="group p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-xs font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-2 pl-1">{s.translation}</div></div>))}</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-slate-100">
                                  <div className="space-y-6">
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry.synonyms || []).length > 0 ? entry.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry.antonyms || []).length > 0 ? entry.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleGenerate(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry.synonyms || []).length > 0 ? entry.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry.antonyms || []).length > 0 ? entry.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      
-                                     {/* ✅ FIX: Added Safe Access to 'meaning' with fallback to empty string */}
+                                     {/* ✅ MODIFICATION: Cross-Lingual Semantic Related Words */}
                                      <div>
                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                         <div className="flex flex-wrap gap-2">
                                             {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                                <button key={`rel-${i}`} onClick={() => handleGenerate(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
                                                     <div className="flex flex-col">
-                                                        <span className="text-xs font-bold text-slate-700">{w.word}</span>
+                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
                                                         <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
                                                     </div>
                                                     {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
@@ -1022,7 +1043,7 @@ ${sentencesStr}
                                         </div>
                                      </div>
                                  </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleGenerate(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                              </div>
                              <div className="pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
