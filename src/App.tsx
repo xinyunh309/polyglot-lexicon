@@ -338,7 +338,7 @@ export default function App() {
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
    
   // Playground 音频状态
-  // ✅ FIX: Simplified UI - Female, Male, Dialogue (Auto)
+  // ✅ FIX: UI Logic - F, M, Dialogue (Auto)
   const [ttsMode, setTtsMode] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
@@ -527,28 +527,50 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ FIX: TRUE Smart Dialogue (Auto-Judge 4 Permutations, No Delays)
+  // ✅ FIX: TRUE Smart Dialogue (Auto-Judge 4 Permutations, Minimized Delays)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      
+      // Simple retry wrapper (minimal protection against network glitches)
+      const fetchWithRetry = async (url: string, options: any, retries = 2, backoff = 500) => {
+          for (let i = 0; i < retries; i++) {
+              try {
+                  const res = await fetch(url, options);
+                  if (res.status === 429) {
+                      console.warn(`Rate Limit 429. Retrying in ${backoff}ms...`);
+                      await delay(backoff);
+                      backoff *= 2; 
+                      continue;
+                  }
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  return res;
+              } catch (err) {
+                  if (i === retries - 1) throw err;
+                  await delay(backoff);
+              }
+          }
+          throw new Error("Max retries exceeded");
+      };
+
       try {
           // 1. Prepare lines
           const lines = playgroundInput.split('\n').filter(l => l.trim());
           const audioParts: string[] = [];
           
-          let pattern: string[] = []; // will be ['Kore', 'Fenrir'] or ['Fenrir', 'Kore'] etc.
+          let pattern: string[] = []; 
 
-          // 2. Determine Pattern (Intelligent Step)
+          // 2. Intelligent Pattern Recognition (One-time check)
           if (ttsMode === 'dialogue') {
               // Analyze first few lines for names
-              const previewText = lines.slice(0, 2).join('\n');
-              const prompt = `Identify gender of speakers in this dialogue.
+              const previewText = lines.slice(0, 3).join('\n');
+              const prompt = `Identify gender sequence for these 2-3 speakers.
               Text: "${previewText}"
               Return JSON: {"genders": ["male", "female"]} (or male/male, female/female etc).
               If unclear, default to ["female", "male"].`;
               
-              // Use Flash model for speed
               const analysis = await callGemini(prompt, true);
               let genders = ['female', 'male']; // fallback
               
@@ -569,43 +591,44 @@ ${sentencesStr}
               pattern = [fixedVoice]; 
           }
 
-          // 3. Generate Audio (No delay, full speed)
+          // 3. Generate Audio
           for (let i = 0; i < lines.length; i++) {
              let line = lines[i];
              
-             // Strip "Name: " prefix (Regex: Anything up to the first colon)
+             // Strip "Name: " prefix
              const textToSpeak = line.replace(/^.*[:：]\s*/, '').trim(); 
              
              if (textToSpeak.length < 1) continue;
 
-             // Select voice based on pattern loop
-             // If pattern is [F, M], line 0 -> F, line 1 -> M, line 2 -> F...
-             // If pattern is [F], line 0 -> F, line 1 -> F...
+             // Select voice based on pattern loop (A-B-A-B or A-A-A...)
              const voiceName = pattern[i % pattern.length];
 
-             const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-               {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({
-                       contents: [{ parts: [{ text: textToSpeak }] }], 
-                       generationConfig: { 
-                           responseModalities: ["AUDIO"], 
-                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                       }
-                   }),
-               }
-             );
+             // Small safety buffer (300ms) to prevent burst rejection while feeling "fast"
+             if (i > 0) await delay(300);
 
-             if (!response.ok) {
-                 console.warn(`Line ${i} failed. Skipping.`);
-                 continue;
+             try {
+                 const response = await fetchWithRetry(
+                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+                   {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({
+                           contents: [{ parts: [{ text: textToSpeak }] }], 
+                           generationConfig: { 
+                               responseModalities: ["AUDIO"], 
+                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                           }
+                       }),
+                   }
+                 );
+
+                 const data = await response.json();
+                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                 if (part) audioParts.push(part);
+
+             } catch (lineError) {
+                 console.error(`Line ${i} failed. Skipping.`, lineError);
              }
-
-             const data = await response.json();
-             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-             if (part) audioParts.push(part);
           }
           
           if (audioParts.length > 0) {
@@ -653,7 +676,7 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and Comprehensive Conjugation
+    // ✅ FIX: Conjugation Prompt - Passato Prossimo/Remoto & Participles
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
@@ -1265,7 +1288,7 @@ ${sentencesStr}
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
-                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
+                                <div key={item.id} onClick={()=>{setEntry(item.entry); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
                                     <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
                                     <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
                                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
