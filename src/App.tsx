@@ -664,9 +664,9 @@ ${sentencesStr}
     9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
     10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
     11. **Conjugations (IMPORTANT)**: If it is a VERB, provide a DETAILED 'conjugations' array.
-       - Include Indicative: Present, Imperfect, Future, Simple Past (Passato Remoto/Preterite).
+       - Include Indicative: Present, Imperfect, Future, Compound Past (e.g., Passato Prossimo), Remote/Simple Past (e.g., Passato Remoto).
        - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
-       - Include: Participles (Present, Past) labeled as 'Participle'.
+       - Include: Participles (Present & Past) grouped under a single "Participles" section.
     
     JSON SCHEMA:
     {
