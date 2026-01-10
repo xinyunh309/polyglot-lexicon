@@ -24,7 +24,7 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Use Flash for logic/analysis, Pro Preview for TTS
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
+const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
 const IMAGEN_MODEL = "imagen-3.0-fast-generate-001"; 
 
 const userFirebaseConfig = {
