@@ -22,6 +22,7 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
+// Use Flash for logic/analysis, Pro Preview for TTS
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
@@ -347,7 +348,6 @@ export default function App() {
              id: doc.id, ...rawData, addedAt: rawData.addedAt || rawData.created_at || Date.now(), 
              entry: rawData.entry || { word: "Error Data", sentences: [] } 
           };
-          // Critical Safety Check for Data
           if (!cleanItem.entry.sentences) cleanItem.entry.sentences = [];
           items.push(cleanItem);
       });
@@ -371,7 +371,6 @@ export default function App() {
     }
   }, [generatedIndex, generatedEntries]);
 
-  // Markdown Aggregation
   useEffect(() => {
       if (generatedEntries.length === 0) return;
       const mdOutput = generatedEntries.map(e => {
@@ -430,7 +429,6 @@ ${sentencesStr}
       }
   };
 
-  // --- AI Logic (Basic) ---
   const callGemini = async (prompt: string, isJson: boolean = false) => {
     try {
       if (requestCache.has(prompt)) return requestCache.get(prompt);
@@ -451,7 +449,6 @@ ${sentencesStr}
     } catch (error) { console.error("Gemini API Error:", error); return null; }
   };
 
-  // --- Playground Logic (Full) ---
   const handlePlaygroundChat = async () => {
     if (!playgroundUserMsg.trim()) return;
     const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
@@ -518,10 +515,10 @@ ${sentencesStr}
           // 2. Dialogue Mode (Native Multi-Speaker)
           else {
               // A. Analyze Speakers & Gender
-              const prompt = `Analyze this dialogue. Identify the 2 main speaker names (found before colons).
-              Text: "${playgroundInput.substring(0, 300)}"
-              Output JSON: { "speakers": [ {"name": "Name1", "gender": "female"}, {"name": "Name2", "gender": "male"} ] }
-              If names are not clear, return empty speakers array.`;
+              const prompt = `Analyze this dialogue. Identify the distinct speaker names (found exactly before colons).
+              Text: "${playgroundInput.substring(0, 500)}"
+              Output JSON: { "speakers": [ {"name": "ExactNameFromText", "gender": "female"}, {"name": "OtherName", "gender": "male"} ] }
+              If format is not "Name: Content", return empty speakers array.`;
               
               const analysis = await callGemini(prompt, true);
               let speakerConfig: any[] = [];
@@ -529,7 +526,8 @@ ${sentencesStr}
               try {
                   if (analysis) {
                       const parsed = JSON.parse(analysis);
-                      if (parsed.speakers && parsed.speakers.length >= 2) {
+                      if (parsed.speakers && parsed.speakers.length >= 1) {
+                           // Map to official voices
                            speakerConfig = parsed.speakers.map((s: any) => ({
                                speaker: s.name,
                                voiceConfig: { 
@@ -544,19 +542,21 @@ ${sentencesStr}
 
               // B. Construct Native Config or Fallback
               if (speakerConfig.length > 0) {
+                  // NATIVE API STRUCTURE
                   requestBody.generationConfig.speechConfig = {
                       multiSpeakerVoiceConfig: {
                           speakerVoiceConfigs: speakerConfig
                       }
                   };
               } else {
-                   // Fallback
+                  // Fallback: If analysis failed, use default voice
                    requestBody.generationConfig.speechConfig = {
                        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
                    };
               }
           }
 
+          // 3. Execute Request
           const response = await fetch(
                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
                {
@@ -583,15 +583,15 @@ ${sentencesStr}
                   document.body.removeChild(link);
               }
           }
+
       } catch (e) {
           console.error(e);
-          alert("Audio generation failed. Check quota.");
+          alert("Audio generation failed. Check quota or format.");
       } finally {
           setIsProcessingAudio(false);
       }
   };
 
-  // --- Dictionary AI Logic ---
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
@@ -623,7 +623,7 @@ ${sentencesStr}
 
     RULES:
     1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹，令人窒息的'). DO NOT provide a descriptive sentence.
-    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词, 形容词).
+    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词).
     3. "sentences": You MUST provide exactly 2 sentences:
        - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
@@ -1245,7 +1245,7 @@ ${sentencesStr}
                                 <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
                             )}
                         </div>
-                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
+                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto"><div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div><h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2><p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">{reviewFilterLang !== 'all' ? `No more ${reviewFilterLang.toUpperCase()} words to review.` : "Your Review Queue is empty."}</p><div className="flex gap-3 justify-center"><button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button><button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button></div></div>
