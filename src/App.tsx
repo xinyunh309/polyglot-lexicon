@@ -23,6 +23,7 @@ import {
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 const GEMINI_MODEL = "gemini-2.5-flash"; 
+// Note: Only the preview model currently supports advanced TTS features reliably
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
@@ -120,35 +121,6 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   } catch (e) {
       console.error("Audio conversion error", e);
       return "";
-  }
-};
-
-const concatAudioParts = (parts: string[]) => {
-  try {
-    const arrays = parts.map(part => {
-      const bin = atob(part);
-      const arr = new Uint8Array(bin.length);
-      for(let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return arr;
-    });
-    
-    const totalLength = arrays.reduce((acc, curr) => acc + curr.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    arrays.forEach(arr => {
-      result.set(arr, offset);
-      offset += arr.length;
-    });
-
-    let binary = '';
-    const len = result.byteLength;
-    for (let i = 0; i < len; i += 1024) {
-      binary += String.fromCharCode.apply(null, Array.from(result.subarray(i, Math.min(i + 1024, len))));
-    }
-    return btoa(binary);
-  } catch (e) {
-    console.error("Audio concat error", e);
-    return "";
   }
 };
 
@@ -338,7 +310,7 @@ export default function App() {
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
    
   // Playground 音频状态
-  // ✅ UI: Female, Male, Dialogue (Auto)
+  // ✅ UI: Female, Male, Dialogue
   const [ttsMode, setTtsMode] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
@@ -377,7 +349,6 @@ export default function App() {
              id: doc.id, ...rawData, addedAt: rawData.addedAt || rawData.created_at || Date.now(), 
              entry: rawData.entry || { word: "Error Data", sentences: [] } 
           };
-          // Critical Safety Check for Data
           if (!cleanItem.entry.sentences) cleanItem.entry.sentences = [];
           items.push(cleanItem);
       });
@@ -401,7 +372,6 @@ export default function App() {
     }
   }, [generatedIndex, generatedEntries]);
 
-  // Markdown Aggregation
   useEffect(() => {
       if (generatedEntries.length === 0) return;
       const mdOutput = generatedEntries.map(e => {
@@ -460,7 +430,6 @@ ${sentencesStr}
       }
   };
 
-  // --- AI Logic (Basic) ---
   const callGemini = async (prompt: string, isJson: boolean = false) => {
     try {
       if (requestCache.has(prompt)) return requestCache.get(prompt);
@@ -481,7 +450,6 @@ ${sentencesStr}
     } catch (error) { console.error("Gemini API Error:", error); return null; }
   };
 
-  // --- Playground Logic (Full) ---
   const handlePlaygroundChat = async () => {
     if (!playgroundUserMsg.trim()) return;
     const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
@@ -527,132 +495,104 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ FIX: TRUE Smart Dialogue (Auto-Judge 4 Permutations, No Delays)
+  // ✅ FIX: Native Multi-Speaker TTS Logic (One Shot)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
-      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-      // Retry mechanism for 429 errors
-      const fetchWithRetry = async (url: string, options: any, retries = 3, backoff = 500) => {
-          for (let i = 0; i < retries; i++) {
-              try {
-                  const res = await fetch(url, options);
-                  if (res.status === 429) {
-                      console.warn(`Rate Limit 429. Retrying in ${backoff}ms...`);
-                      await delay(backoff);
-                      backoff *= 2; 
-                      continue;
-                  }
-                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                  return res;
-              } catch (err) {
-                  if (i === retries - 1) throw err;
-                  await delay(backoff);
-              }
-          }
-          throw new Error("Max retries exceeded");
-      };
-
       try {
-          // 1. Prepare lines
-          const lines = playgroundInput.split('\n').filter(l => l.trim());
-          const audioParts: string[] = [];
-          
-          let pattern: string[] = []; 
+          let requestBody: any = {
+              contents: [{ parts: [{ text: playgroundInput }] }], // Send full text including names
+              generationConfig: { responseModalities: ["AUDIO"] }
+          };
 
-          // 2. Intelligent Pattern Recognition (One-time check)
-          if (ttsMode === 'dialogue') {
-              // Analyze first few lines for names
-              const previewText = lines.slice(0, 3).join('\n');
-              const prompt = `Identify gender sequence for these 2-3 speakers.
-              Text: "${previewText}"
-              Return JSON: {"genders": ["male", "female"]} (or male/male, female/female etc).
-              If unclear, default to ["female", "male"].`;
+          // 1. Single Speaker (Manual)
+          if (ttsMode !== 'dialogue') {
+             const voiceName = ttsMode === 'female' ? 'Kore' : 'Fenrir';
+             requestBody.generationConfig.speechConfig = {
+                 voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
+             };
+          } 
+          // 2. Dialogue Mode (Native Multi-Speaker)
+          else {
+              // A. Analyze Speakers & Gender
+              const prompt = `Analyze this dialogue. Identify the 2 main speaker names (found before colons).
+              Text: "${playgroundInput.substring(0, 300)}"
+              Output JSON: { "speakers": [ {"name": "Name1", "gender": "female"}, {"name": "Name2", "gender": "male"} ] }
+              If names are not clear, return empty speakers array.`;
               
               const analysis = await callGemini(prompt, true);
-              let genders = ['female', 'male']; // fallback
+              let speakerConfig: any[] = [];
               
               try {
                   if (analysis) {
                       const parsed = JSON.parse(analysis);
-                      if (parsed.genders && Array.isArray(parsed.genders)) {
-                          genders = parsed.genders;
+                      if (parsed.speakers && parsed.speakers.length >= 2) {
+                           // Map to official voices
+                           speakerConfig = parsed.speakers.map((s: any) => ({
+                               speaker: s.name,
+                               voiceConfig: { 
+                                   prebuiltVoiceConfig: { 
+                                       voiceName: s.gender.toLowerCase().includes('female') ? 'Kore' : 'Fenrir' 
+                                   } 
+                               }
+                           }));
                       }
                   }
-              } catch (e) { console.warn("Gender detect failed, using default"); }
+              } catch(e) { console.warn("Analysis failed", e); }
 
-              // Map genders to voices
-              pattern = genders.map(g => g.toLowerCase().includes('female') ? 'Kore' : 'Fenrir');
-          } else {
-              // Manual Mode (All Female or All Male)
-              const fixedVoice = ttsMode === 'female' ? 'Kore' : 'Fenrir';
-              pattern = [fixedVoice]; 
+              // B. Construct Native Config or Fallback
+              if (speakerConfig.length > 0) {
+                  // NATIVE API STRUCTURE
+                  requestBody.generationConfig.speechConfig = {
+                      multiSpeakerVoiceConfig: {
+                          speakerVoiceConfigs: speakerConfig
+                      }
+                  };
+              } else {
+                  // Fallback: If analysis failed, just use single voice to avoid error
+                   requestBody.generationConfig.speechConfig = {
+                       voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
+                   };
+              }
           }
 
-          // 3. Generate Audio (No intentional delay, using retry wrapper)
-          for (let i = 0; i < lines.length; i++) {
-             let line = lines[i];
-             
-             // Strip "Name: " prefix
-             const textToSpeak = line.replace(/^.*[:：]\s*/, '').trim(); 
-             
-             if (textToSpeak.length < 1) continue;
+          // 3. Execute Request
+          const response = await fetch(
+               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+               {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify(requestBody),
+               }
+          );
 
-             // Select voice based on pattern loop (A-B-A-B or A-A-A...)
-             const voiceName = pattern[i % pattern.length];
+          if (!response.ok) throw new Error("Audio API Error");
+          const data = await response.json();
+          const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
-             try {
-                 const response = await fetchWithRetry(
-                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-                   {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({
-                           contents: [{ parts: [{ text: textToSpeak }] }], 
-                           generationConfig: { 
-                               responseModalities: ["AUDIO"], 
-                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                           }
-                       }),
-                   }
-                 );
-
-                 const data = await response.json();
-                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                 if (part) audioParts.push(part);
-
-             } catch (lineError) {
-                 console.error(`Line ${i} failed. Skipping.`, lineError);
-             }
-          }
-          
-          if (audioParts.length > 0) {
-              const mergedBase64 = audioParts.length === 1 ? audioParts[0] : concatAudioParts(audioParts);
-              const wavUrl = pcmToWav(mergedBase64);
-              
+          if (audioData) {
+              const wavUrl = pcmToWav(audioData);
               if (action === 'play') {
-                  const audio = new Audio(wavUrl);
-                  audio.play();
+                  new Audio(wavUrl).play();
               } else {
                   const link = document.createElement('a');
                   link.href = wavUrl;
-                  link.download = `polyglot_${playgroundLang}_dialogue_${Date.now()}.wav`;
+                  link.download = `polyglot_audio_${Date.now()}.wav`;
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
               }
           }
+
       } catch (e) {
           console.error(e);
-          alert("Audio generation error.");
+          alert("Audio generation failed. Check format or quota.");
       } finally {
           setIsProcessingAudio(false);
       }
   };
 
-  // --- Dictionary AI Logic ---
   const handleGenerate = async (overrideWord?: string) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
@@ -673,19 +613,18 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: Conjugation Prompt - Passato Prossimo/Remoto & Participles
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
     ${shouldUseAuto 
-      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
+      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code.` 
       : `Target Language: ${targetLangLabel} (${targetLangCode}).`}
     
     User Language: Chinese (Simplified).
 
     RULES:
     1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹，令人窒息的'). DO NOT provide a descriptive sentence.
-    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词, 形容词).
+    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词).
     3. "sentences": You MUST provide exactly 2 sentences:
        - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
@@ -889,13 +828,11 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
-  // ✅ FIX: Concrete Image Prompt
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
       setIsGeneratingImage(true);
       try {
-          // Concrete prompt for better results
           const prompt = `A concrete, realistic scene depicting the meaning of '${entry.word}': ${entry.meaning}. High quality, clear details, cinematic lighting.`;
           
           const response = await fetch(
@@ -954,7 +891,6 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Improved Algorithm + Weight Tuning (Theme+Level)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
@@ -966,13 +902,11 @@ ${sentencesStr}
             let score = 0;
             const itemWordLower = (item.entry.word || '').toLowerCase();
             
-            // Safety check for arrays
             const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
             const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
             const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
 
-            // 1. Semantic Check
             const isSemanticMatch = 
                 itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) ||
                 entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) ||
@@ -981,11 +915,9 @@ ${sentencesStr}
             
             if (isSemanticMatch) score += 10;
 
-            // 2. Theme Check (Increased weight +5)
             const itemThemeLower = (item.entry.theme || '').toLowerCase();
             if (itemThemeLower && currentThemeLower && itemThemeLower.includes(currentThemeLower)) score += 5;
             
-            // 3. Metadata Match
             if (item.entry.pos === entry.pos) score += 1;
             if (item.entry.level === entry.level) score += 2; 
             
@@ -1237,7 +1169,7 @@ ${sentencesStr}
                         <div className="flex bg-white p-1 rounded-lg border border-slate-200">
                             <button onClick={()=>setTtsMode('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
                             <button onClick={()=>setTtsMode('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
-                            <button onClick={()=>setTtsMode('dialogue')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Auto</button>
+                            <button onClick={()=>setTtsMode('dialogue')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsMode==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dialogue</button>
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-2">
