@@ -527,7 +527,7 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio
+  // ✅ FIX: Optimized Dialogue Audio Generation
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
@@ -539,58 +539,79 @@ ${sentencesStr}
 
           const audioParts: string[] = [];
           
-          // Voice assignment map for roles
+          // Role management
           const roleVoiceMap = new Map<string, string>();
-          let nextVoiceIndex = 0;
-          const voices = ['Kore', 'Fenrir']; // F, M
+          let nextVoiceIndex = 0; // 0: Female, 1: Male
+          const voices = ['Kore', 'Fenrir']; 
 
+          // Process lines serially
           for (let i = 0; i < lines.length; i++) {
              let line = lines[i];
              let textToSpeak = line;
              let voiceName = 'Kore';
 
              if (ttsGender === 'dialogue') {
-                 // Check for "Name: Content" pattern
-                 const match = line.match(/^([^:：]+)[:：]\s*(.+)/);
+                 // 1. Improved Regex: Handles **Name**: and Name: formats
+                 // Captures the name (Group 1) and the content (Group 2)
+                 // Removes asterisks from the name automatically
+                 const match = line.match(/^\s*(?:\*\*)?([^*:：]+)(?:\*\*)?[:：]\s*(.+)/);
+                 
                  if (match) {
-                     const name = match[1].trim();
-                     textToSpeak = match[2].trim(); // Strip name for TTS
+                     const rawName = match[1].trim(); // Name without **
+                     const content = match[2].trim();
                      
-                     // Assign voice to role
-                     if (!roleVoiceMap.has(name)) {
-                         roleVoiceMap.set(name, voices[nextVoiceIndex % 2]);
+                     textToSpeak = content; // Only read the content
+                     
+                     // Assign consistent voice to this name
+                     if (!roleVoiceMap.has(rawName)) {
+                         // First name = Female (Kore), Second = Male (Fenrir), then alternate
+                         roleVoiceMap.set(rawName, voices[nextVoiceIndex % 2]);
                          nextVoiceIndex++;
                      }
-                     voiceName = roleVoiceMap.get(name)!;
+                     voiceName = roleVoiceMap.get(rawName)!;
                  } else {
-                     // No name found, alternate based on line index if standard
+                     // Fallback: Alternate voices based on line number if format is strictly not met
                      voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
                  }
              } else {
+                 // Single speaker mode
                  voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
              }
 
              if (textToSpeak.length < 1) continue;
 
-             const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-               {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({
-                       contents: [{ parts: [{ text: textToSpeak }] }], 
-                       generationConfig: { 
-                           responseModalities: ["AUDIO"], 
-                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                       }
-                   }),
-               }
-             );
+             // 2. Anti-Rate Limit Delay (Fixes "Stopped halfway")
+             // Wait 500ms between requests to prevent 429 Errors
+             if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
 
-             if (!response.ok) continue;
-             const data = await response.json();
-             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-             if (part) audioParts.push(part);
+             try {
+                 const response = await fetch(
+                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+                   {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({
+                           contents: [{ parts: [{ text: textToSpeak }] }], 
+                           generationConfig: { 
+                               responseModalities: ["AUDIO"], 
+                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                           }
+                       }),
+                   }
+                 );
+
+                 if (!response.ok) {
+                     console.warn(`Line ${i} failed: ${response.status}`);
+                     continue; 
+                 }
+                 
+                 const data = await response.json();
+                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                 if (part) audioParts.push(part);
+
+             } catch (lineError) {
+                 console.error(`Error processing line ${i}:`, lineError);
+             }
           }
           
           if (audioParts.length > 0) {
@@ -598,19 +619,22 @@ ${sentencesStr}
               const wavUrl = pcmToWav(mergedBase64);
               
               if (action === 'play') {
-                  new Audio(wavUrl).play();
+                  const audio = new Audio(wavUrl);
+                  audio.play();
               } else {
                   const link = document.createElement('a');
                   link.href = wavUrl;
-                  link.download = `polyglot_${playgroundLang}_${ttsGender}_${Date.now()}.wav`;
+                  link.download = `polyglot_${playgroundLang}_dialogue_${Date.now()}.wav`;
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
               }
+          } else {
+              alert("Could not generate audio. Please check your text or API quota.");
           }
       } catch (e) {
           console.error(e);
-          alert("Audio action failed. Please check network/quota or model availability.");
+          alert("Audio workflow failed.");
       } finally {
           setIsProcessingAudio(false);
       }
