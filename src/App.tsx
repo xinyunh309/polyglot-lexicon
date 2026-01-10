@@ -22,7 +22,7 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// ✅ FIX: Using Pro Preview TTS for stability (Flash TTS is unstable)
+// Using Pro Preview TTS for stability
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
@@ -183,7 +183,6 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
-// Simplified map since we now ask AI to return Chinese directly, but kept for legacy data compatibility
 const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
@@ -598,6 +597,7 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
+    // ✅ FIX: "definition" -> "translation" & Chinese Tags Enforced
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
@@ -608,16 +608,16 @@ ${sentencesStr}
     User Language: Chinese (Simplified).
 
     RULES:
-    1. "meaning": Must be a SHORT, CONCISE definition in Chinese (Max 15 words). NOT an explanation.
-    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词).
+    1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹, 令人窒息的'). DO NOT provide a descriptive sentence.
+    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词, 形容词).
     3. "sentences": You MUST provide exactly 2 sentences:
        - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
        - Structure: {"type": "Common" or "Advanced", "target": "...", "translation": "..."}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
-    6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技).
-    7. "pronunciation": MUST use International Phonetic Alphabet (IPA).
+    6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
+    7. "pronunciation": MUST use International Phonetic Alphabet (IPA). Do NOT use phonetic respelling.
     8. **IMPORTANT FOR JAPANESE/CHINESE**: 
        - "word" field MUST use Kanji/Hanzi (e.g., '猫').
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
@@ -639,7 +639,7 @@ ${sentencesStr}
       "crossRefs": [{"lang": "code", "word": "string"}],
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
-      "pronunciation": "string (IPA or Kana/Pinyin)"
+      "pronunciation": "string (IPA)"
     }`;
 
     const prompt = inputMode === 'word' || overrideWord 
@@ -755,7 +755,6 @@ ${sentencesStr}
       }
   };
 
-  // ✅ FIX: Silent Save
   const handleSmartSave = async () => {
     if (!entry) return;
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
@@ -871,7 +870,7 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Defensive programming + Weight Adjustment for Contextual Related
+  // ✅ FIX: Defensive programming + Improved Algorithm + Weight Tuning
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
@@ -898,7 +897,7 @@ ${sentencesStr}
             
             if (isSemanticMatch) score += 10;
 
-            // 2. Theme Check (Increased weight +5)
+            // 2. Theme Check (Increased weight +5 for stronger grouping)
             const itemThemeLower = (item.entry.theme || '').toLowerCase();
             if (itemThemeLower && currentThemeLower && itemThemeLower === currentThemeLower) score += 5;
             
@@ -1189,7 +1188,7 @@ ${sentencesStr}
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
-                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
+                                <div key={item.id} onClick={()=>{setEntry(item.entry); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
                                     <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
                                     <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
                                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
@@ -1220,7 +1219,7 @@ ${sentencesStr}
                                 <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
                             )}
                         </div>
-                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
+                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto"><div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div><h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2><p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">{reviewFilterLang !== 'all' ? `No more ${reviewFilterLang.toUpperCase()} words to review.` : "Your Review Queue is empty."}</p><div className="flex gap-3 justify-center"><button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button><button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button></div></div>
