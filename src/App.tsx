@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Zap, Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap, Download, User, ArrowLeft 
+  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -202,9 +202,24 @@ const formatPOS = (pos: string): string => {
 const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
 
 interface VocabEntry {
-  word: string; lang: Language; pronunciation?: string; pos: string; gender?: string; meaning: string; level: string; theme: string; morphology?: string; idiom?: string; idiomMeaning?: string; 
+  word: string; 
+  lang: Language; 
+  pronunciation?: string; 
+  pos: string; 
+  gender?: string; 
+  meaning: string; 
+  level: string; 
+  theme: string; 
+  morphology?: string; 
+  originalInput?: string; // New: stores the user input if different from lemma
+  idiom?: string; 
+  idiomMeaning?: string; 
   sentences: { type?: string; target: string; translation: string; }[];
-  synonyms: string[]; antonyms: string[]; crossRefs: { lang: string; word: string }[]; source?: string;
+  synonyms: string[]; 
+  antonyms: string[]; 
+  crossRefs: { lang: string; word: string }[]; 
+  conjugations?: { tense: string; forms: string[] }[]; // New: conjugation tables
+  source?: string;
 }
 interface ReviewItem {
   id: string; entry: VocabEntry; stage: number; nextReviewDate: number; lastReviewedDate: number; addedAt?: number; created_at: number; isArchived: boolean; 
@@ -301,6 +316,9 @@ export default function App() {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
+  
+  // Conjugation Modal
+  const [showConjugationModal, setShowConjugationModal] = useState(false);
     
   // Story & Chat & Image
   const [showStoryModal, setShowStoryModal] = useState(false);
@@ -597,18 +615,18 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: "definition" -> "translation" & Chinese Tags Enforced
+    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and IPA
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
     
     ${shouldUseAuto 
-      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish). Do NOT default to English unless the word is English.` 
+      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
       : `Target Language: ${targetLangLabel} (${targetLangCode}).`}
     
     User Language: Chinese (Simplified).
 
     RULES:
-    1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹, 令人窒息的'). DO NOT provide a descriptive sentence.
+    1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹，令人窒息的'). DO NOT provide a descriptive sentence.
     2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词, 形容词).
     3. "sentences": You MUST provide exactly 2 sentences:
        - Sentence 1: "Common" - A common, conversational, or simple usage.
@@ -617,14 +635,17 @@ ${sentencesStr}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
-    7. "pronunciation": MUST use International Phonetic Alphabet (IPA). Do NOT use phonetic respelling.
+    7. "pronunciation": MUST use International Phonetic Alphabet (IPA) inside brackets, e.g., /.../. Do NOT use phonetic respelling (e.g., ney-PREH-see).
     8. **IMPORTANT FOR JAPANESE/CHINESE**: 
        - "word" field MUST use Kanji/Hanzi (e.g., '猫').
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
+    9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
+    10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
+    11. **Conjugations**: If it is a VERB, provide 'conjugations' array for top 3 tenses (Present, Past, Future).
     
     JSON SCHEMA:
     {
-      "word": "${target}",
+      "word": "Lemma of ${target}",
       "lang": "${shouldUseAuto ? "detected_code" : targetLangCode}",
       "pos": "string (CN)",
       "meaning": "string (CN)",
@@ -637,6 +658,8 @@ ${sentencesStr}
       "synonyms": ["string", "string"],
       "antonyms": ["string"],
       "crossRefs": [{"lang": "code", "word": "string"}],
+      "conjugations": [{"tense": "string (CN)", "forms": ["string"]}],
+      "morphology": "string (CN, optional)",
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
       "pronunciation": "string (IPA)"
@@ -659,8 +682,10 @@ ${sentencesStr}
             synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], 
             antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], 
             crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], 
+            conjugations: Array.isArray(e.conjugations) ? e.conjugations : [],
             pos: formatPOS(e.pos), 
-            level: e.level?.toUpperCase()||'B2' 
+            level: e.level?.toUpperCase()||'B2',
+            originalInput: target !== e.word ? target : undefined
         }));
         
         setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); setGeneratedImage(null);
@@ -761,7 +786,6 @@ ${sentencesStr}
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
     
-    // Set status to indicate processing
     setSaveStatus('saved'); 
     
     if (exist) {
@@ -772,7 +796,6 @@ ${sentencesStr}
       await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
     }
     
-    // Reset status after 2s
     setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
@@ -870,7 +893,7 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Defensive programming + Improved Algorithm + Weight Tuning
+  // ✅ FIX: Improved Algorithm + Weight Tuning (Theme+Level)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
@@ -882,7 +905,7 @@ ${sentencesStr}
             let score = 0;
             const itemWordLower = (item.entry.word || '').toLowerCase();
             
-            // Safety check for arrays (Dirty data protection)
+            // Safety check for arrays
             const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
             const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
@@ -897,13 +920,13 @@ ${sentencesStr}
             
             if (isSemanticMatch) score += 10;
 
-            // 2. Theme Check (Increased weight +5 for stronger grouping)
+            // 2. Theme Check (Increased weight +5)
             const itemThemeLower = (item.entry.theme || '').toLowerCase();
-            if (itemThemeLower && currentThemeLower && itemThemeLower === currentThemeLower) score += 5;
+            if (itemThemeLower && currentThemeLower && itemThemeLower.includes(currentThemeLower)) score += 5;
             
             // 3. Metadata Match
             if (item.entry.pos === entry.pos) score += 1;
-            if (item.entry.level === entry.level) score += 2; // Level match boosted
+            if (item.entry.level === entry.level) score += 2; 
             
             return { item, score };
         })
@@ -1046,6 +1069,13 @@ ${sentencesStr}
                              )}
                              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                                  <div className="w-full min-w-0">
+                                     {/* ✅ FIX: New Conjugation Status Bar */}
+                                     {entry.morphology && (
+                                         <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold w-full md:w-auto">
+                                             <Split size={14}/> {entry.morphology}
+                                         </div>
+                                     )}
+                                     
                                      <div className="flex flex-wrap items-center gap-2 mb-3">
                                          <span className="text-3xl drop-shadow-sm mr-1">{getFlag(entry.lang)}</span>
                                          <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm" onClick={()=>handleTagJump('lang', entry.lang)} title="Filter by Language"/>
@@ -1055,10 +1085,16 @@ ${sentencesStr}
                                          <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} title="Filter by Theme"/>
                                      </div>
                                      
-                                     <div className="relative">
+                                     <div className="relative flex items-center gap-3">
                                          {/* Font Size Clamp for Mobile */}
-                                         <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words hyphens-auto w-full" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}>{entry.word}</h2>
-                                         {entry.morphology && (<div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold uppercase rounded border border-purple-200"><Zap size={10} className="fill-purple-500"/> {entry.morphology}</div>)}
+                                         <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words hyphens-auto" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}>{entry.word}</h2>
+                                         
+                                         {/* ✅ FIX: Conjugation Table Button */}
+                                         {entry.conjugations && entry.conjugations.length > 0 && (
+                                             <button onClick={()=>setShowConjugationModal(true)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors" title="View Conjugations">
+                                                 <Grid3X3 size={20}/>
+                                             </button>
+                                         )}
                                      </div>
 
                                      <div className="flex items-center gap-4 mt-4 flex-wrap">
@@ -1188,7 +1224,7 @@ ${sentencesStr}
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
-                                <div key={item.id} onClick={()=>{setEntry(item.entry); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
+                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
                                     <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
                                     <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
                                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
@@ -1219,7 +1255,7 @@ ${sentencesStr}
                                 <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
                             )}
                         </div>
-                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
+                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto"><div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div><h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2><p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">{reviewFilterLang !== 'all' ? `No more ${reviewFilterLang.toUpperCase()} words to review.` : "Your Review Queue is empty."}</p><div className="flex gap-3 justify-center"><button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button><button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button></div></div>
@@ -1239,6 +1275,32 @@ ${sentencesStr}
                         {isGeneratingStory ? (<div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40}/><p className="font-medium">Weaving your story...</p></div>) : storyContent ? (
                             <div className="space-y-6"><div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-4"><div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div><TTSButton text={storyContent.target_story} lang={entry?.lang || 'en'} label="Listen to Story" size={18}/></div><div className="prose prose-lg leading-loose text-slate-800">{renderBoldText(storyContent.target_story)}</div></div><div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100"><div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div><div className="leading-loose text-indigo-900 text-lg">{renderBoldText(storyContent.mixed_story)}</div></div></div>
                         ) : <div className="text-center text-slate-400">Error loading story.</div>}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ✅ FIX: Conjugation Modal */}
+        {showConjugationModal && entry?.conjugations && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
+                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 className="font-bold text-base flex items-center gap-2 text-indigo-900">
+                            <Grid3X3 size={18} className="text-indigo-500"/> Conjugations
+                        </h3>
+                        <button onClick={()=>setShowConjugationModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={18}/></button>
+                    </div>
+                    <div className="p-4 overflow-y-auto flex-1 custom-scrollbar space-y-4">
+                        {entry.conjugations.map((c, i) => (
+                            <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                <div className="text-xs font-bold text-indigo-600 uppercase mb-2 tracking-wider">{c.tense}</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {c.forms.map((f, idx) => (
+                                        <div key={idx} className="text-sm text-slate-700 bg-white px-2 py-1.5 rounded border border-slate-200">{f}</div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
