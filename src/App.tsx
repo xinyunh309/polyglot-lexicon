@@ -25,7 +25,7 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 // Use Flash for logic/analysis, Pro Preview for TTS
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
-const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
+const IMAGEN_MODEL = "imagen-3.0-fast-generate-001"; 
 
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -532,7 +532,7 @@ ${sentencesStr}
                                speaker: s.name,
                                voiceConfig: { 
                                    prebuiltVoiceConfig: { 
-                                       voiceName: s.gender.toLowerCase().includes('female') ? 'Kore' : 'Fenrir' 
+                                        voiceName: s.gender.toLowerCase().includes('female') ? 'Kore' : 'Fenrir' 
                                    } 
                                }
                            }));
@@ -1147,6 +1147,7 @@ ${sentencesStr}
                             <div className="flex justify-between items-center"><span className="text-xs font-mono text-slate-400 truncate max-w-[70%]">{generatedEntries.length > 1 ? `Markdown Source (${generatedEntries.length} words)` : "Markdown Source"}</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={12}/> : <Eye size={12}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={12}/> Copy</button></div></div>
                             {showMarkdown && (<pre className="mt-3 text-xs text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-3 rounded border border-white/10 animate-in slide-in-from-top-2">{generatedMarkdown}</pre>)}
                         </div>
+                    </div>
                     </div>
                 ) : (
                     <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-20 h-20 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={40} className="text-slate-300"/></div><h3 className="text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-slate-400 max-w-xs">Enter a word in the sidebar to generate a comprehensive B2-C2 level card.</p></div>
