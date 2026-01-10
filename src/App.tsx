@@ -22,9 +22,9 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// ✅ FIX 1: Switched to 'flash' for fastest TTS latency
+// ✅ FIX 1: Reverted to the stable TTS model (Flash does not support audio generation consistently yet)
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // Was "pro-preview-tts" (too slow)
+const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
 const userFirebaseConfig = {
@@ -674,16 +674,20 @@ ${sentencesStr}
     }
   };
 
+  // ✅ FIX: Image state reset
   const handleJump = (word: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
+      setGeneratedImage(null); // Clear previous image
       handleGenerate(word);
   };
 
+  // ✅ FIX: Image state reset
   const handleBack = () => {
       if (history.length === 0) return;
       const previous = history[history.length - 1];
       setHistory(prev => prev.slice(0, -1));
       setEntry(previous);
+      setGeneratedImage(null); // Clear previous image
       setGeneratedEntries([previous]); 
       setGeneratedIndex(0);
   };
@@ -803,7 +807,7 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
-  // ✅ FIX: Improved Image Prompt
+  // ✅ FIX: Concrete Image Prompt
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
@@ -1186,7 +1190,7 @@ ${sentencesStr}
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
-                                <div key={item.id} onClick={()=>{setEntry(item.entry); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
+                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
                                     <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
                                     <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
                                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
