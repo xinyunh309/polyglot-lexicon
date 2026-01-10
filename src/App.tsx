@@ -22,7 +22,7 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// ✅ FIX 1: Reverted to the stable TTS model (Flash does not support audio generation consistently yet)
+// ✅ FIX: Using Pro Preview TTS for stability (Flash TTS is unstable)
 const GEMINI_MODEL = "gemini-2.5-flash"; 
 const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
@@ -183,6 +183,7 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
+// Simplified map since we now ask AI to return Chinese directly, but kept for legacy data compatibility
 const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
@@ -608,15 +609,16 @@ ${sentencesStr}
 
     RULES:
     1. "meaning": Must be a SHORT, CONCISE definition in Chinese (Max 15 words). NOT an explanation.
-    2. "pos": Return standard part of speech (e.g., noun, verb) in English.
+    2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词).
     3. "sentences": You MUST provide exactly 2 sentences:
        - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
        - Structure: {"type": "Common" or "Advanced", "target": "...", "translation": "..."}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja).
     5. "level": CEFR Level (B1, B2, C1, C2).
-    6. "theme": MUST be a broad, standardized category in ENGLISH (e.g., "Animals", "Business", "Emotion", "Nature").
-    7. **IMPORTANT FOR JAPANESE/CHINESE**: 
+    6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技).
+    7. "pronunciation": MUST use International Phonetic Alphabet (IPA).
+    8. **IMPORTANT FOR JAPANESE/CHINESE**: 
        - "word" field MUST use Kanji/Hanzi (e.g., '猫').
        - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
     
@@ -624,10 +626,10 @@ ${sentencesStr}
     {
       "word": "${target}",
       "lang": "${shouldUseAuto ? "detected_code" : targetLangCode}",
-      "pos": "string",
+      "pos": "string (CN)",
       "meaning": "string (CN)",
       "level": "string",
-      "theme": "string (English)",
+      "theme": "string (CN)",
       "sentences": [
         {"type": "Common", "target": "string", "translation": "string (CN)"},
         {"type": "Advanced", "target": "string", "translation": "string (CN)"}
@@ -637,7 +639,7 @@ ${sentencesStr}
       "crossRefs": [{"lang": "code", "word": "string"}],
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
-      "pronunciation": "string (optional)"
+      "pronunciation": "string (IPA or Kana/Pinyin)"
     }`;
 
     const prompt = inputMode === 'word' || overrideWord 
@@ -651,7 +653,6 @@ ${sentencesStr}
         const parsed = JSON.parse(result);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
         
-        // Robust Data Sanitization to Prevent White Screen
         const validEntries = entries.map((e: any) => ({ 
             ...e, 
             sentences: Array.isArray(e.sentences) ? e.sentences : [], 
@@ -662,7 +663,7 @@ ${sentencesStr}
             level: e.level?.toUpperCase()||'B2' 
         }));
         
-        setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); 
+        setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); setGeneratedImage(null);
         
         if (validEntries[0]?.lang) {
             const detectedCode = validEntries[0].lang.toLowerCase();
@@ -674,20 +675,18 @@ ${sentencesStr}
     }
   };
 
-  // ✅ FIX: Image state reset
   const handleJump = (word: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
-      setGeneratedImage(null); // Clear previous image
+      setGeneratedImage(null); 
       handleGenerate(word);
   };
 
-  // ✅ FIX: Image state reset
   const handleBack = () => {
       if (history.length === 0) return;
       const previous = history[history.length - 1];
       setHistory(prev => prev.slice(0, -1));
       setEntry(previous);
-      setGeneratedImage(null); // Clear previous image
+      setGeneratedImage(null); 
       setGeneratedEntries([previous]); 
       setGeneratedIndex(0);
   };
@@ -872,9 +871,9 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Defensive programming against dirty data causing crashes
+  // ✅ FIX: Defensive programming + Weight Adjustment for Contextual Related
   const relatedWords = useMemo(() => {
-    if (!entry || !entry.word) return []; // Safety check on entry
+    if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
     const currentThemeLower = (entry.theme || '').toLowerCase();
 
@@ -899,19 +898,19 @@ ${sentencesStr}
             
             if (isSemanticMatch) score += 10;
 
-            // 2. Theme Check
+            // 2. Theme Check (Increased weight +5)
             const itemThemeLower = (item.entry.theme || '').toLowerCase();
-            if (itemThemeLower && currentThemeLower && itemThemeLower === currentThemeLower) score += 3;
+            if (itemThemeLower && currentThemeLower && itemThemeLower === currentThemeLower) score += 5;
             
             // 3. Metadata Match
             if (item.entry.pos === entry.pos) score += 1;
-            if (item.entry.level === entry.level) score += 1;
+            if (item.entry.level === entry.level) score += 2; // Level match boosted
             
             return { item, score };
         })
         .filter(x => x.score > 0)
         .sort((a, b) => b.score - a.score) 
-        .slice(0, 5); 
+        .slice(0, 6); 
     
     return scored.map(x => x.item.entry);
   }, [entry, savedItems, isCurrentSaved]);
@@ -1092,24 +1091,24 @@ ${sentencesStr}
                                  <div className="space-y-6">
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
-                                     
-                                     {/* ✅ FIX: Safe Render for Related Words */}
-                                     <div>
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
-                                        <div className="flex flex-wrap gap-2">
-                                            {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                                <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
-                                                        <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
-                                                    </div>
-                                                    {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
-                                                </button>
-                                            )) : <span className="text-sm text-slate-300 italic">No related words found yet.</span>}
-                                        </div>
-                                     </div>
                                  </div>
                                  <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                 
+                                 {/* ✅ FIX: Moved to Full Width Layout */}
+                                 <div className="md:col-span-2">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
+                                                    <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
+                                                </div>
+                                                {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
+                                            </button>
+                                        )) : <span className="text-sm text-slate-300 italic">No related words found yet.</span>}
+                                    </div>
+                                 </div>
                              </div>
                              <div className="pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
@@ -1221,7 +1220,7 @@ ${sentencesStr}
                                 <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
                             )}
                         </div>
-                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
+                        {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xl p-10 max-w-lg mx-auto"><div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle size={48}/></div><h2 className="text-3xl font-bold text-slate-900 mb-3">All Caught Up!</h2><p className="text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">{reviewFilterLang !== 'all' ? `No more ${reviewFilterLang.toUpperCase()} words to review.` : "Your Review Queue is empty."}</p><div className="flex gap-3 justify-center"><button onClick={()=>setMainTab('library')} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">Explore Library</button><button onClick={()=>setReviewFilterLang('all')} className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50" title="Reset Filter"><RefreshCw size={20}/></button></div></div>
