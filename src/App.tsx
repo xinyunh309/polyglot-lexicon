@@ -79,7 +79,7 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
 
 const getFlag = (langCode: string) => {
-    if (!langCode) return '🌐';
+    if (!langCode || typeof langCode !== 'string') return '🌐';
     const normalized = langCode.toLowerCase().split('-')[0];
     return FLAGS[normalized] || '🌐';
 };
@@ -449,7 +449,6 @@ ${sentencesStr}
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               contents: [{ parts: [{ text: prompt }] }], 
-              // Enable strict JSON mode if requested
               generationConfig: isJson ? { responseMimeType: "application/json" } : undefined,
               safetySettings: [{ category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }]
           })
@@ -586,7 +585,6 @@ ${sentencesStr}
     }
     setIsGenerating(true); setMainTab('dictionary');
 
-    // ✅ FIX: Strict Auto-Detect & Language Validation
     const shouldUseAuto = isAutoLang && !overrideWord;
     
     let targetLangCode = "en";
@@ -665,10 +663,8 @@ ${sentencesStr}
         
         setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); 
         
-        // Update language state if detected
         if (validEntries[0]?.lang) {
             const detectedCode = validEntries[0].lang.toLowerCase();
-            // Check if it's a supported language before switching
             if (LANGUAGES.some(l => l.code === detectedCode)) {
                 setCurrentLang(detectedCode as Language);
             }
@@ -869,20 +865,38 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
+  // ✅ FIX: Defensive programming against dirty data causing crashes
   const relatedWords = useMemo(() => {
-    if (!entry) return [];
+    if (!entry || !entry.word) return []; // Safety check on entry
+    const currentWordLower = (entry.word || '').toLowerCase();
+    const currentThemeLower = (entry.theme || '').toLowerCase();
+
     const scored = savedItems
         .filter(item => item.id !== (isCurrentSaved?.id || '')) 
         .map(item => {
             let score = 0;
+            const itemWordLower = (item.entry.word || '').toLowerCase();
+            
+            // Safety check for arrays (Dirty data protection)
+            const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
+            const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
+            const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
+            const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
+
+            // 1. Semantic Check
             const isSemanticMatch = 
-                item.entry.crossRefs?.some(r => r.word.toLowerCase() === entry.word.toLowerCase()) ||
-                entry.crossRefs?.some(r => r.word.toLowerCase() === item.entry.word.toLowerCase()) ||
-                item.entry.synonyms?.some(s => s.toLowerCase() === entry.word.toLowerCase()) ||
-                entry.synonyms?.some(s => s.toLowerCase() === item.entry.word.toLowerCase());
+                itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) ||
+                entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) ||
+                itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) ||
+                entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
             
             if (isSemanticMatch) score += 10;
-            if (item.entry.theme && entry.theme && item.entry.theme.toLowerCase() === entry.theme.toLowerCase()) score += 3;
+
+            // 2. Theme Check
+            const itemThemeLower = (item.entry.theme || '').toLowerCase();
+            if (itemThemeLower && currentThemeLower && itemThemeLower === currentThemeLower) score += 3;
+            
+            // 3. Metadata Match
             if (item.entry.pos === entry.pos) score += 1;
             if (item.entry.level === entry.level) score += 1;
             
