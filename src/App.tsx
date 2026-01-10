@@ -338,7 +338,7 @@ export default function App() {
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
    
   // Playground 音频状态
-  // ✅ FIX: UI Logic - F, M, Dialogue (Auto)
+  // ✅ FIX: Simplified UI - Female, Male, Dialogue (Auto)
   const [ttsMode, setTtsMode] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
@@ -527,34 +527,11 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ FIX: TRUE Smart Dialogue (Auto-Judge 4 Permutations, Minimized Delays)
+  // ✅ FIX: TRUE Smart Dialogue (Auto-Judge 4 Permutations, No Delays)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
-      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-      
-      // Simple retry wrapper (minimal protection against network glitches)
-      const fetchWithRetry = async (url: string, options: any, retries = 2, backoff = 500) => {
-          for (let i = 0; i < retries; i++) {
-              try {
-                  const res = await fetch(url, options);
-                  if (res.status === 429) {
-                      console.warn(`Rate Limit 429. Retrying in ${backoff}ms...`);
-                      await delay(backoff);
-                      backoff *= 2; 
-                      continue;
-                  }
-                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                  return res;
-              } catch (err) {
-                  if (i === retries - 1) throw err;
-                  await delay(backoff);
-              }
-          }
-          throw new Error("Max retries exceeded");
-      };
-
       try {
           // 1. Prepare lines
           const lines = playgroundInput.split('\n').filter(l => l.trim());
@@ -566,32 +543,38 @@ ${sentencesStr}
           if (ttsMode === 'dialogue') {
               // Analyze first few lines for names
               const previewText = lines.slice(0, 3).join('\n');
-              const prompt = `Identify gender sequence for these 2-3 speakers.
+              const prompt = `Analyze dialogue. Identify gender sequence of first two distinct speakers.
               Text: "${previewText}"
-              Return JSON: {"genders": ["male", "female"]} (or male/male, female/female etc).
-              If unclear, default to ["female", "male"].`;
+              Return JSON: {"pattern": "MF"} (or FM, MM, FF). 
+              M=Male, F=Female.
+              Example: if Speaker A (Female) talks, then Speaker B (Male) talks -> "FM".`;
               
               const analysis = await callGemini(prompt, true);
-              let genders = ['female', 'male']; // fallback
+              let pCode = "FM"; // default fallback
               
               try {
                   if (analysis) {
                       const parsed = JSON.parse(analysis);
-                      if (parsed.genders && Array.isArray(parsed.genders)) {
-                          genders = parsed.genders;
-                      }
+                      if (parsed.pattern) pCode = parsed.pattern;
                   }
               } catch (e) { console.warn("Gender detect failed, using default"); }
 
-              // Map genders to voices
-              pattern = genders.map(g => g.toLowerCase().includes('female') ? 'Kore' : 'Fenrir');
+              // Map pattern code to voice array [Voice1, Voice2]
+              // FM -> [Kore, Fenrir]
+              // MF -> [Fenrir, Kore]
+              // FF -> [Kore, Kore]
+              // MM -> [Fenrir, Fenrir]
+              const v1 = pCode.charAt(0).toUpperCase() === 'F' ? 'Kore' : 'Fenrir';
+              const v2 = pCode.charAt(1).toUpperCase() === 'F' ? 'Kore' : 'Fenrir';
+              pattern = [v1, v2];
+
           } else {
               // Manual Mode (All Female or All Male)
               const fixedVoice = ttsMode === 'female' ? 'Kore' : 'Fenrir';
               pattern = [fixedVoice]; 
           }
 
-          // 3. Generate Audio
+          // 3. Generate Audio (No delay, full speed as requested)
           for (let i = 0; i < lines.length; i++) {
              let line = lines[i];
              
@@ -601,34 +584,33 @@ ${sentencesStr}
              if (textToSpeak.length < 1) continue;
 
              // Select voice based on pattern loop (A-B-A-B or A-A-A...)
+             // pattern has length 2 (for dialogue) or 1 (for single)
+             // i % pattern.length automatically handles the alternation
              const voiceName = pattern[i % pattern.length];
 
-             // Small safety buffer (300ms) to prevent burst rejection while feeling "fast"
-             if (i > 0) await delay(300);
+             const response = await fetch(
+               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+               {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                       contents: [{ parts: [{ text: textToSpeak }] }], 
+                       generationConfig: { 
+                           responseModalities: ["AUDIO"], 
+                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
+                       }
+                   }),
+               }
+             );
 
-             try {
-                 const response = await fetchWithRetry(
-                   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-                   {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({
-                           contents: [{ parts: [{ text: textToSpeak }] }], 
-                           generationConfig: { 
-                               responseModalities: ["AUDIO"], 
-                               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                           }
-                       }),
-                   }
-                 );
-
-                 const data = await response.json();
-                 const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                 if (part) audioParts.push(part);
-
-             } catch (lineError) {
-                 console.error(`Line ${i} failed. Skipping.`, lineError);
+             if (!response.ok) {
+                 console.warn(`Line ${i} failed. Skipping.`);
+                 continue;
              }
+
+             const data = await response.json();
+             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+             if (part) audioParts.push(part);
           }
           
           if (audioParts.length > 0) {
