@@ -4,7 +4,7 @@ import {
   ChevronRight, Save, CheckCircle, Loader2, X,
   Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
   Upload, Merge, Database, Send, Eye, EyeOff, 
-  Zap, Image as ImageIcon, Gamepad2, Trash2,
+  Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
   Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split
 } from 'lucide-react';
@@ -183,6 +183,7 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
+// Simplified map since we now ask AI to return Chinese directly, but kept for legacy data compatibility
 const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
@@ -211,14 +212,14 @@ interface VocabEntry {
   level: string; 
   theme: string; 
   morphology?: string; 
-  originalInput?: string; // New: stores the user input if different from lemma
+  originalInput?: string; 
   idiom?: string; 
   idiomMeaning?: string; 
   sentences: { type?: string; target: string; translation: string; }[];
   synonyms: string[]; 
   antonyms: string[]; 
   crossRefs: { lang: string; word: string }[]; 
-  conjugations?: { tense: string; forms: string[] }[]; // New: conjugation tables
+  conjugations?: { tense: string; forms: string[] }[]; 
   source?: string;
 }
 interface ReviewItem {
@@ -1280,7 +1281,7 @@ ${sentencesStr}
             </div>
         )}
 
-        {/* ✅ FIX: Conjugation Modal */}
+        {/* Conjugation Modal */}
         {showConjugationModal && entry?.conjugations && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
                 <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
