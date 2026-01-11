@@ -653,7 +653,15 @@ ${sentencesStr}
         const parsed = JSON.parse(result);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
         const validEntries = entries.map((e: any) => ({ 
-            ...e, sentences: Array.isArray(e.sentences) ? e.sentences : [], synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], conjugations: Array.isArray(e.conjugations) ? e.conjugations : [], pos: formatPOS(e.pos), level: e.level?.toUpperCase()||'B2', originalInput: target !== e.word ? target : undefined
+            ...e, 
+            sentences: Array.isArray(e.sentences) ? e.sentences : [], 
+            synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], 
+            antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], 
+            crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], 
+            conjugations: Array.isArray(e.conjugations) ? e.conjugations : [], 
+            pos: formatPOS(e.pos), 
+            level: e.level?.toUpperCase()||'B2', 
+            originalInput: target !== e.word ? target : undefined
         }));
         setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); setGeneratedImage(null);
         if (validEntries[0]?.lang) {
@@ -855,7 +863,7 @@ ${sentencesStr}
    
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ Corrected relatedWords (Syntax Fix)
+  // ✅ Corrected relatedWords (Multi-line for safety)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
@@ -882,7 +890,9 @@ ${sentencesStr}
                 entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
             
             if (isSemanticMatch) score += 10;
-            if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) { score += 3; }
+            if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) { 
+                score += 3; 
+            }
             if (item.entry.pos === entry.pos) score += 0.5;
             
             return { item, score };
