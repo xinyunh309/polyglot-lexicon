@@ -159,7 +159,7 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
-const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词', 'reflexive verb': '自反动词', 'mutual verb': '自反动词' };
+const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词', 'reflexive verb': '自反动词', 'mutual verb': '自反动词', 'proper noun': '名词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
     const lower = pos.toLowerCase().trim();
