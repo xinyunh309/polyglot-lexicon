@@ -5,7 +5,7 @@ import {
   Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Image as ImageIcon, Gamepad2, Trash2,
-  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
+  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Clock, Calendar,
   Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
