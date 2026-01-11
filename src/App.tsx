@@ -509,28 +509,28 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-// ✅ Playground Audio (修复性别切换 Bug + 降级逻辑)
+// ✅ Playground Audio (优化多说话人逻辑 & Debug)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       const isDialogue = ttsGender === 'dialogue';
-      
-      // 确定单人模式下的 Voice Name
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
-      // 1. 准备 Pro 模型配置
       let proSpeechConfig: any = {};
       
+      // --- 构建配置 ---
       if (isDialogue) {
           const lines = playgroundInput.split('\n');
           const speakerMap = new Map<string, string>();
           const distinctSpeakers: string[] = [];
           
           lines.forEach(line => {
+              // 匹配 "Name: Content" 或 "Name：Content"
               const match = line.match(/^([^:：]+)[:：]/);
               if (match) {
                   const name = match[1].trim();
+                  // 限制最多 5 个说话人
                   if (!speakerMap.has(name) && distinctSpeakers.length < 5) {
                       const voiceName = AVAILABLE_VOICES[distinctSpeakers.length];
                       speakerMap.set(name, voiceName);
@@ -540,6 +540,7 @@ ${sentencesStr}
           });
 
           if (distinctSpeakers.length > 0) {
+              console.log("🎙️ Detected Speakers:", distinctSpeakers); // Debug
               proSpeechConfig = {
                   multiSpeakerVoiceConfig: {
                       speakerVoiceConfigs: distinctSpeakers.map(name => ({
@@ -549,10 +550,10 @@ ${sentencesStr}
                   }
               };
           } else {
+              console.warn("⚠️ Dialogue mode selected but no 'Name:' format found. Falling back to single voice.");
               proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
           }
       } else {
-          // 单人模式：使用选定的性别
           proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
       }
 
@@ -571,14 +572,16 @@ ${sentencesStr}
       };
 
       try {
-          // 尝试 1: Pro 模型
+          console.log("🚀 Requesting Pro TTS Config:", proSpeechConfig); // Debug
+          
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: isDialogue ? `TTS the following conversation, ignoring the speaker name in audio:\n${playgroundInput}` : playgroundInput }] }], 
+                    // 关键修改：对话模式下直接传原文，不要加额外指令，以免干扰 Speaker 匹配
+                    contents: [{ parts: [{ text: playgroundInput }] }], 
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
                         speechConfig: proSpeechConfig
@@ -598,37 +601,27 @@ ${sentencesStr}
 
       } catch (e) {
           console.warn("Pro TTS Model failed, falling back to Flash...", e);
-
+          // Fallback Logic
           try {
-              // 尝试 2: Flash 模型 (修复：使用正确的单人 Voice Name)
               const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
-
               const response = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
                 {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: playgroundInput }] }], 
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"], 
-                            speechConfig: fallbackConfig
-                        }
+                        generationConfig: { responseModalities: ["AUDIO"], speechConfig: fallbackConfig }
                     }),
                 }
               );
-
               if (!response.ok) throw new Error(`Flash TTS failed: ${response.status}`);
               const data = await response.json();
               const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              if (base64Audio) {
-                  processAudioData(base64Audio);
-              } else {
-                  alert("Audio generation failed on both models.");
-              }
+              if (base64Audio) processAudioData(base64Audio);
+              else alert("Audio generation failed on both models.");
           } catch (e2) {
               console.error(e2);
-              alert("TTS Service currently unavailable. Please check your API Key or Quota.");
+              alert("TTS Service unavailable.");
           }
       } finally {
           setIsProcessingAudio(false);
@@ -1193,8 +1186,10 @@ ${sentencesStr}
               {/* Right: Card Display */}
               <div className="lg:col-span-8 min-w-0">
                 {entry ? (
-                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
+                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col relative">
+                        {/* Header Section */}
                         <div className={`bg-slate-50/80 p-4 md:p-8 border-b border-slate-100 relative ${history.length > 0 ? 'pl-10 md:pl-8' : ''}`}>
+                             {/* Back Button */}
                              {history.length > 0 && (
                                  <button onClick={handleBack} className="absolute top-4 left-3 md:left-4 z-20 p-1.5 md:p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-500 transition-all shadow-sm group">
                                      <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
@@ -1212,96 +1207,105 @@ ${sentencesStr}
                              )}
 
                              <div className="flex flex-col gap-3">
-                                 <div className="flex justify-between items-start gap-2">
-                                     <div className="min-w-0 flex-1">
-                                         {entry.morphology && (
-                                             <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold">
-                                                 <Split size={10}/> {entry.morphology}
-                                             </div>
-                                         )}
-                                         <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
-                                     </div>
-                                     <div className="flex flex-col items-end gap-1 shrink-0">
-                                         <div className="flex items-center gap-1">
-                                            <span className="text-xl md:text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
-                                            <TTSButton text={entry.word} lang={entry.lang} size={20} />
-                                            <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors" title="Generate Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
+                                 {/* 1. Word Title */}
+                                 <div className="min-w-0">
+                                     {entry.morphology && (
+                                         <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold">
+                                             <Split size={10}/> {entry.morphology}
                                          </div>
-                                         {entry.pronunciation && (
-                                            <span className="text-slate-500 font-mono text-xs md:text-sm tracking-wide bg-white px-1 rounded border border-slate-100">{entry.pronunciation}</span>
-                                         )}
-                                     </div>
+                                     )}
+                                     <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
                                  </div>
 
+                                 {/* 2. Tags Row (moved UP) + Verb Table Icon Only */}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
                                      {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700 shrink-0"/>}
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
+                                     
+                                     {/* Verb Table: Icon Only */}
                                      {entry.conjugations && entry.conjugations.length > 0 && (
-                                         <button onClick={()=>setShowConjugationModal(true)} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold shrink-0 flex items-center gap-1"><Grid3X3 size={10}/> VERB TABLE</button>
+                                         <button onClick={()=>setShowConjugationModal(true)} className="p-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md shrink-0 hover:bg-indigo-100 transition-colors" title="Verb Conjugations">
+                                             <Grid3X3 size={14}/>
+                                         </button>
                                      )}
                                  </div>
 
-                                 <div className="flex items-center gap-2 w-full mt-1 justify-end">
+                                 {/* 3. Meta Row (Moved DOWN): Flag, IPA, TTS, Image */}
+                                 <div className="flex flex-wrap items-center gap-3 mt-1">
+                                     <span className="text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
+                                     
+                                     {entry.pronunciation && (
+                                        <span className="text-slate-500 font-mono text-xs md:text-sm tracking-wide bg-white px-2 py-0.5 rounded border border-slate-200">{entry.pronunciation}</span>
+                                     )}
+                                     
+                                     <div className="w-px h-4 bg-slate-200"></div>
+                                     
+                                     <div className="flex items-center gap-1">
+                                         <TTSButton text={entry.word} lang={entry.lang} size={18} />
+                                         <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Generate Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
+                                     </div>
+                                 </div>
+
+                                 {/* 4. Action Buttons (Compact & Small) */}
+                                 <div className="flex items-center gap-2 w-full mt-2 justify-end pt-3 border-t border-slate-200/50">
                                     {isCurrentSaved && (
                                         <>
-                                            <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2 md:p-2.5 rounded-xl border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 hover:text-slate-600 border-slate-200'}`} title="Archive"><Archive size={16} className="md:w-[18px] md:h-[18px]"/></button>
-                                            <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2 md:p-2.5 rounded-xl border border-rose-200 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-all"><Trash2 size={16} className="md:w-[18px] md:h-[18px]"/></button>
-                                            <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                            <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 md:p-2.5 rounded-xl border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 shrink-0`} title="Auto-Complete">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16} className="md:w-[18px] md:h-[18px]"/>}</button>
+                                            <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2 rounded-lg border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600 border-slate-200'}`} title="Archive"><Archive size={16}/></button>
+                                            <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2 rounded-lg border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all"><Trash2 size={16}/></button>
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                                            <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 rounded-lg border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button>
                                         </>
                                     )}
-                                    <button onClick={handleSmartSave} className={`flex items-center justify-center gap-2 px-6 py-2 md:py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-200/50 transition-all text-sm md:text-base ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                        {saveStatus==='saved' ? <CheckCircle size={16}/> : isCurrentSaved ? <><Merge size={16}/> Update</> : <><Save size={16}/> Save</>}
+                                    
+                                    {/* Compact Save Button */}
+                                    <button onClick={handleSmartSave} className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs md:text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                        {saveStatus==='saved' ? <CheckCircle size={14}/> : isCurrentSaved ? <><Merge size={14}/> Update</> : <><Save size={14}/> Save</>}
                                     </button>
                                  </div>
                              </div>
                         </div>
 
+                        {/* Content Body */}
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
-                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Visual Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
+                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
+                             
                              <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
-                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg md:text-xl font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
-                             <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 pt-6 md:pt-8 border-t border-slate-100">
-                                 <div className="space-y-4 md:space-y-6">
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs md:text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs md:text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
+                             
+                             {entry.idiom && (<div className="bg-amber-50/80 p-4 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             
+                             <div className="space-y-3">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 pl-1 text-sm">{s.translation}</div></div>))}</div>
+                             
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
+                                 <div className="space-y-4">
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                  </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm md:text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs md:text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                                  
-                                 <div className="md:col-span-2">
-                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Contextually Related</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
-                                                    <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span>
-                                                </div>
-                                                {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
-                                            </button>
-                                        )) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}
-                                    </div>
+                                 <div className="space-y-4">
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Related</span><div className="flex flex-wrap gap-2">{relatedWords.length > 0 ? relatedWords.map((w, i) => (<button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left"><div className="flex flex-col"><span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span></div></button>)) : <span className="text-xs text-slate-300 italic">None.</span>}</div></div>
                                  </div>
                              </div>
-                             <div className="pt-4 md:pt-6 border-t border-slate-100">
-                                <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
-                                    <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
-                                    <div className="space-y-2 mb-2 max-h-[150px] md:max-h-[200px] overflow-y-auto custom-scrollbar">{chatMessages.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs md:text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-100 text-indigo-900 shadow-sm'}`}>{renderChatText(m.text)}</div></div>))}{isChatting && <div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-lg border border-indigo-100"><Loader2 size={14} className="animate-spin text-indigo-400"/></div></div>}</div>
-                                    <div className="flex gap-2"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none placeholder:text-indigo-200" placeholder="Ask details..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Send size={14} className="md:w-4 md:h-4"/></button></div>
+
+                             <div className="pt-4 border-t border-slate-100">
+                                <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100">
+                                    <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
+                                    <div className="space-y-2 mb-2 max-h-[150px] overflow-y-auto custom-scrollbar">{chatMessages.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs md:text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-100 text-indigo-900 shadow-sm'}`}>{renderChatText(m.text)}</div></div>))}{isChatting && <div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-lg border border-indigo-100"><Loader2 size={14} className="animate-spin text-indigo-400"/></div></div>}</div>
+                                    <div className="flex gap-2"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none" placeholder="Ask details..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Send size={14}/></button></div>
                                 </div>
                              </div>
                         </div>
-                        <div className="bg-slate-900 px-4 md:px-6 py-2 md:py-3 flex flex-col">
-                            <div className="flex justify-between items-center"><span className="text-[10px] md:text-xs font-mono text-slate-400 truncate max-w-[70%]">{generatedEntries.length > 1 ? `Markdown Source (${generatedEntries.length} words)` : "Markdown Source"}</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
-                            {showMarkdown && (<pre className="mt-2 text-[10px] md:text-xs text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
+                        
+                        <div className="bg-slate-900 px-4 py-2 flex flex-col">
+                            <div className="flex justify-between items-center"><span className="text-[10px] font-mono text-slate-400 truncate max-w-[70%]">Markdown Source</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
+                            {showMarkdown && (<pre className="mt-2 text-[10px] text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
                         </div>
                     </div>
                 ) : (
-                    <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 md:w-20 md:h-20 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300 md:w-10 md:h-10"/></div><h3 className="text-lg md:text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word in the sidebar to generate a comprehensive B2-C2 level card.</p></div>
+                    <div className="h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300"/></div><h3 className="text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word to start.</p></div>
                 )}
               </div>
             </div>
