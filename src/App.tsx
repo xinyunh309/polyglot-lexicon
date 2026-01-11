@@ -1097,12 +1097,14 @@ ${sentencesStr}
   const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
-    // 🔴 修复 1: 移除 fixed inset-0, 改回 min-h-screen, 允许 PC 端自然滚动
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col pb-20 md:pb-0 safe-p-b">
+    // 🔴 修复 1: 根容器采用混合布局
+    // Mobile: fixed inset-0 (锁死视口，实现 App 质感，解决 Nav 和 Playground 高度问题)
+    // Desktop: static min-h-screen (恢复网页流式布局，允许自然滚动)
+    <div className="fixed inset-0 md:static md:min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col safe-p-b">
       
-      {/* Header: 保持 Sticky 效果，但不会锁死页面 */}
-      <header className="sticky top-0 z-40 bg-slate-50/95 backdrop-blur-md px-4 py-3 md:px-8 md:py-4 shadow-sm transition-all border-b border-slate-200/50">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-7xl mx-auto w-full">
+      {/* Header */}
+      <div className="shrink-0 bg-slate-50 z-50 px-4 pt-4 md:px-8 md:pt-8 pb-2 shadow-[0_1px_2px_rgba(0,0,0,0.02)] md:shadow-none transition-all">
+        <header className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-7xl mx-auto w-full">
           <div className="flex flex-col items-start w-full md:w-auto">
             <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2 md:gap-3">
                 <div className="bg-indigo-600 text-white p-1 md:p-1.5 rounded-lg"><Globe size={18} className="md:w-5 md:h-5" /></div>
@@ -1120,17 +1122,22 @@ ${sentencesStr}
                 ))}
               </div>
           </div>
-        </div>
-      </header>
+        </header>
+      </div>
 
-      {/* 🔴 修复 2: Main 移除 overflow-hidden, 允许内容撑高 */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8">
-          {/* DICTIONARY TAB (PC Scroll Fixed + Small Buttons) */}
+      {/* 🔴 修复 2: Main 容器
+         - Mobile: flex-1 overflow-hidden (强制子元素自己处理滚动，防止撑开页面)
+         - Desktop: overflow-visible (允许内容自然撑开)
+      */}
+      <main className="flex-1 flex flex-col min-w-0 w-full max-w-7xl mx-auto p-4 md:p-8 pt-2 md:pt-0 overflow-hidden md:overflow-visible">
+          
+          {/* DICTIONARY TAB */}
           {mainTab === 'dictionary' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+            // Mobile: h-full overflow-y-auto (内部滚动)
+            // Desktop: h-auto (自然撑高)
+            <div className="h-full overflow-y-auto md:h-auto md:overflow-visible grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 items-start custom-scrollbar pb-2 md:pb-0">
               {/* Left: Input Panel */}
-              <div className="lg:col-span-4 space-y-4">
-                {/* Language Selector */}
+              <div className="lg:col-span-4 space-y-4 min-w-0">
                 <div className="flex gap-2 mb-2">
                      <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'}`}>
                         {isAutoLang ? "⚡ Auto-Detect" : "Manual Select"}
@@ -1155,20 +1162,20 @@ ${sentencesStr}
                                <button onClick={()=>handleGenerate()} disabled={isGenerating} className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">{isGenerating ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}</button>
                            </div>
                            <button onClick={() => setIsFigurativeMode(!isFigurativeMode)} className={`w-full flex items-center justify-center gap-2 text-xs font-bold py-2 rounded-lg border transition-all ${isFigurativeMode ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'}`}>
-                               <Lightbulb size={12} className={isFigurativeMode?"fill-amber-500":""}/> {isFigurativeMode ? "Figurative Active" : "Standard Mode"}
+                               <Lightbulb size={12} className={isFigurativeMode?"fill-amber-500":""}/> {isFigurativeMode ? "Figurative Priority Active" : "Standard Definition Mode"}
                            </button>
                        </div>
                    )}
                    {inputMode === 'text' && (
                        <div className="space-y-2">
-                           <textarea value={inputText} onChange={e=>setInputText(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl h-40 resize-none text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 outline-none" placeholder="Paste text..." />
-                           <button onClick={()=>handleGenerate()} disabled={isGenerating} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-indigo-700 transition-colors">{isGenerating ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} Analyze</button>
+                           <textarea value={inputText} onChange={e=>setInputText(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl h-40 resize-none text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 outline-none" placeholder="Paste article text here..." />
+                           <button onClick={()=>handleGenerate()} disabled={isGenerating} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-indigo-700 transition-colors">{isGenerating ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} Analyze & Extract</button>
                        </div>
                    )}
                    {inputMode === 'import' && (
                        <div className="space-y-2">
-                           <textarea value={importText} onChange={e=>setImportText(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl h-40 resize-none text-xs font-mono focus:bg-white focus:ring-2 focus:ring-indigo-100 outline-none" placeholder="Paste list..." />
-                           <button onClick={handleSmartImport} disabled={isGenerating} className="w-full py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-slate-900 transition-colors">{isGenerating ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>} Smart Import</button>
+                           <textarea value={importText} onChange={e=>setImportText(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl h-40 resize-none text-xs font-mono focus:bg-white focus:ring-2 focus:ring-indigo-100 outline-none" placeholder="Paste ANY text/list to import..." />
+                           <button onClick={handleSmartImport} disabled={isGenerating} className="w-full py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-slate-900 transition-colors">{isGenerating ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>} Smart AI Import</button>
                        </div>
                    )}
                 </div>
@@ -1177,7 +1184,7 @@ ${sentencesStr}
                     <div className="text-xs font-bold text-slate-400 uppercase mb-1">System Status</div>
                     <div className="flex items-center justify-center gap-2 text-slate-600 font-medium text-sm">
                         <Database size={14} className={isFirebaseAvailable ? "text-emerald-500" : "text-slate-400"}/> 
-                        {isFirebaseAvailable ? 'Cloud Sync' : 'Local'}
+                        {isFirebaseAvailable ? 'Cloud Sync Active' : 'Offline / Local'}
                         {dbLoading && <Loader2 size={14} className="animate-spin text-slate-400"/>}
                     </div>
                 </div>
@@ -1186,10 +1193,8 @@ ${sentencesStr}
               {/* Right: Card Display */}
               <div className="lg:col-span-8 min-w-0">
                 {entry ? (
-                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col relative">
-                        {/* Header Section */}
+                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
                         <div className={`bg-slate-50/80 p-4 md:p-8 border-b border-slate-100 relative ${history.length > 0 ? 'pl-10 md:pl-8' : ''}`}>
-                             {/* Back Button */}
                              {history.length > 0 && (
                                  <button onClick={handleBack} className="absolute top-4 left-3 md:left-4 z-20 p-1.5 md:p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-500 transition-all shadow-sm group">
                                      <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
@@ -1207,7 +1212,6 @@ ${sentencesStr}
                              )}
 
                              <div className="flex flex-col gap-3">
-                                 {/* Word & Flag */}
                                  <div className="flex justify-between items-start gap-2">
                                      <div className="min-w-0 flex-1">
                                          {entry.morphology && (
@@ -1217,12 +1221,11 @@ ${sentencesStr}
                                          )}
                                          <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
                                      </div>
-                                     
                                      <div className="flex flex-col items-end gap-1 shrink-0">
                                          <div className="flex items-center gap-1">
                                             <span className="text-xl md:text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
                                             <TTSButton text={entry.word} lang={entry.lang} size={20} />
-                                            <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors" title="Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
+                                            <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors" title="Generate Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
                                          </div>
                                          {entry.pronunciation && (
                                             <span className="text-slate-500 font-mono text-xs md:text-sm tracking-wide bg-white px-1 rounded border border-slate-100">{entry.pronunciation}</span>
@@ -1230,14 +1233,10 @@ ${sentencesStr}
                                      </div>
                                  </div>
 
-                                 {/* Tags */}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
-                                     
-                                     {/* 👇 修复点：加回了这行 Gender Tag，解决了 isNoun 未使用的报错 */}
                                      {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700 shrink-0"/>}
-                                     
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
                                      {entry.conjugations && entry.conjugations.length > 0 && (
@@ -1245,75 +1244,78 @@ ${sentencesStr}
                                      )}
                                  </div>
 
-                                 {/* 🔴 修复 3: Action Buttons (Compact) */}
-                                 <div className="flex items-center gap-2 w-full mt-2 justify-end">
+                                 <div className="flex items-center gap-2 w-full mt-1 justify-end">
                                     {isCurrentSaved && (
                                         <>
-                                            <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2.5 rounded-xl border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`} title="Archive"><Archive size={18}/></button>
-                                            <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2.5 rounded-xl border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all"><Trash2 size={18}/></button>
+                                            <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2 md:p-2.5 rounded-xl border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 hover:text-slate-600 border-slate-200'}`} title="Archive"><Archive size={16} className="md:w-[18px] md:h-[18px]"/></button>
+                                            <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2 md:p-2.5 rounded-xl border border-rose-200 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-all"><Trash2 size={16} className="md:w-[18px] md:h-[18px]"/></button>
                                             <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                            <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2.5 rounded-xl border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}</button>
+                                            <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 md:p-2.5 rounded-xl border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 shrink-0`} title="Auto-Complete">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16} className="md:w-[18px] md:h-[18px]"/>}</button>
                                         </>
                                     )}
-                                    
-                                    {/* Save Button: No longer flex-1, fixed minimal width */}
-                                    <button onClick={handleSmartSave} className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-200/50 transition-all text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                        {saveStatus==='saved' ? <CheckCircle size={18}/> : isCurrentSaved ? <><Merge size={18}/> Update</> : <><Save size={18}/> Save</>}
+                                    <button onClick={handleSmartSave} className={`flex items-center justify-center gap-2 px-6 py-2 md:py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-200/50 transition-all text-sm md:text-base ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                        {saveStatus==='saved' ? <CheckCircle size={16}/> : isCurrentSaved ? <><Merge size={16}/> Update</> : <><Save size={16}/> Save</>}
                                     </button>
                                  </div>
                              </div>
                         </div>
 
-                        {/* Content Body */}
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
-                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
-                             
+                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Visual Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
                              <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
-                             
-                             {entry.idiom && (<div className="bg-amber-50/80 p-4 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
-                             
-                             <div className="space-y-3">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 pl-1 text-sm">{s.translation}</div></div>))}</div>
-                             
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
-                                 <div className="space-y-4">
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
+                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg md:text-xl font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 pt-6 md:pt-8 border-t border-slate-100">
+                                 <div className="space-y-4 md:space-y-6">
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs md:text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs md:text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                  </div>
+                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm md:text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs md:text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                                  
-                                 <div className="space-y-4">
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Related</span><div className="flex flex-wrap gap-2">{relatedWords.length > 0 ? relatedWords.map((w, i) => (<button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left"><div className="flex flex-col"><span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span></div></button>)) : <span className="text-xs text-slate-300 italic">None.</span>}</div></div>
+                                 <div className="md:col-span-2">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Contextually Related</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
+                                                    <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span>
+                                                </div>
+                                                {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
+                                            </button>
+                                        )) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}
+                                    </div>
                                  </div>
                              </div>
-
-                             <div className="pt-4 border-t border-slate-100">
-                                <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100">
-                                    <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
-                                    <div className="space-y-2 mb-2 max-h-[150px] overflow-y-auto custom-scrollbar">{chatMessages.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs md:text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-100 text-indigo-900 shadow-sm'}`}>{renderChatText(m.text)}</div></div>))}{isChatting && <div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-lg border border-indigo-100"><Loader2 size={14} className="animate-spin text-indigo-400"/></div></div>}</div>
-                                    <div className="flex gap-2"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none" placeholder="Ask details..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Send size={14}/></button></div>
+                             <div className="pt-4 md:pt-6 border-t border-slate-100">
+                                <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
+                                    <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
+                                    <div className="space-y-2 mb-2 max-h-[150px] md:max-h-[200px] overflow-y-auto custom-scrollbar">{chatMessages.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs md:text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-100 text-indigo-900 shadow-sm'}`}>{renderChatText(m.text)}</div></div>))}{isChatting && <div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-lg border border-indigo-100"><Loader2 size={14} className="animate-spin text-indigo-400"/></div></div>}</div>
+                                    <div className="flex gap-2"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none placeholder:text-indigo-200" placeholder="Ask details..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Send size={14} className="md:w-4 md:h-4"/></button></div>
                                 </div>
                              </div>
                         </div>
-                        
-                        <div className="bg-slate-900 px-4 py-2 flex flex-col">
-                            <div className="flex justify-between items-center"><span className="text-[10px] font-mono text-slate-400 truncate max-w-[70%]">Markdown Source</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
-                            {showMarkdown && (<pre className="mt-2 text-[10px] text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
+                        <div className="bg-slate-900 px-4 md:px-6 py-2 md:py-3 flex flex-col">
+                            <div className="flex justify-between items-center"><span className="text-[10px] md:text-xs font-mono text-slate-400 truncate max-w-[70%]">{generatedEntries.length > 1 ? `Markdown Source (${generatedEntries.length} words)` : "Markdown Source"}</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
+                            {showMarkdown && (<pre className="mt-2 text-[10px] md:text-xs text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
                         </div>
                     </div>
                 ) : (
-                    <div className="h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300"/></div><h3 className="text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word to start.</p></div>
+                    <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 md:w-20 md:h-20 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300 md:w-10 md:h-10"/></div><h3 className="text-lg md:text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word in the sidebar to generate a comprehensive B2-C2 level card.</p></div>
                 )}
               </div>
             </div>
           )}
 
-          {/* PLAYGROUND TAB (Compact Mobile Layout) */}
+          {/* PLAYGROUND TAB */}
           {mainTab === 'playground' && (
-            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full">
-                
-                {/* Left: Input & TTS */}
-                {/* 👇 核心修改: h-[55%] (桌面端保持 h-full) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[55%] lg:h-full min-h-0 shrink-0">
+            // 🔴 修复 3: 高度逻辑分离
+            // Mobile: h-full (占满 Mobile main 容器)
+            // Desktop: h-[calc(100vh-140px)] (固定高度，确保 Grid 布局正常)
+            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full md:h-[calc(100vh-140px)] pb-16 md:pb-0">
+                {/* Left: Input */}
+                {/* Mobile h-[60%] / Desktop h-full */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
@@ -1321,10 +1323,8 @@ ${sentencesStr}
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
-                    {/* Compact Input */}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
-                    {/* Controls Row */}
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
@@ -1339,14 +1339,13 @@ ${sentencesStr}
                 </div>
                 
                 {/* Right: AI Chat */}
-                {/* 👇 核心修改: flex-1 会自动占据剩余空间 (100% - 55% - gap ≈ 45%) */}
+                {/* Mobile: flex-1 (自动填满剩余 60%) / Desktop: h-full */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
                     <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
                         <div className="flex bg-white rounded-lg p-0.5 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={10}/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={10}/> Test</button></div>
                     </div>
                     
-                    {/* Chat Messages */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/30 custom-scrollbar">
                         {playgroundChat.length === 0 && (<div className="text-center py-6 text-slate-400"><Bot size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Start chatting below!</p></div>)}
                         {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
@@ -1354,7 +1353,6 @@ ${sentencesStr}
                         <div ref={playgroundEndRef} />
                     </div>
                     
-                    {/* Chat Input */}
                     <div className="p-2 border-t border-slate-100 bg-white shrink-0"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Message..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={16}/></button></div></div>
                 </div>
             </div>
@@ -1362,8 +1360,10 @@ ${sentencesStr}
            
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
-                {/* Header: Mobile Optimized */}
+            // Mobile: h-full (内部滚动)
+            // Desktop: h-[calc(100vh-140px)] (维持固定高度，或改 h-auto 让它滚动)
+            // 这里恢复为固定高度，因为 Library 通常需要内部滚动条来固定 Filter 栏
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full md:h-[calc(100vh-140px)] overflow-hidden pb-16 md:pb-0">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-2">
                         <div className="bg-indigo-100 p-1.5 rounded-lg text-indigo-600"><Library size={18}/></div>
@@ -1373,86 +1373,64 @@ ${sentencesStr}
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* Import: Desktop Only */}
                         <label className="hidden md:flex cursor-pointer px-3 py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-xs items-center gap-2 hover:bg-emerald-50 transition-all">
                             <Upload size={14}/> Import
                             <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
                         </label>
-                        
-                        {/* Cluster: Desktop Text, Mobile Icon */}
                         <button onClick={handleAutoCluster} disabled={isClustering} className="p-2 md:px-3 md:py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">
                             {isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} 
                             <span className="hidden md:inline">Cluster</span>
                         </button>
-                        
-                        {/* AI Story: Always Visible, Right Aligned */}
                         <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all">
                             <Sparkles size={14}/> <span className="md:inline">AI Story</span>
                         </button>
                     </div>
                 </div>
                 
-                {/* Filters: Responsive Design */}
                 <div className="px-4 py-3 border-b border-slate-100 bg-white">
                     <div className="flex flex-wrap md:flex-nowrap items-center gap-2">
-                        {/* Icon */}
                         <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase mr-1">
                             <Filter size={12}/> <span className="hidden md:inline">Filter:</span>
                         </div>
-                        
-                        {/* Selectors: Mobile(Abbr) / Desktop(Full) */}
                         <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[55px] md:w-auto focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}>
                             <option value="all" className="md:hidden">Lan</option>
                             <option value="all" className="hidden md:block">Language</option>
                             {LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.label}</option>)}
                         </select>
-                        
                         <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}>
                             <option value="all" className="md:hidden">Lvl</option>
                             <option value="all" className="hidden md:block">Level</option>
                             {availableLevels.map(l=><option key={l} value={l}>{l}</option>)}
                         </select>
-                        
                         <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}>
                             <option value="all" className="md:hidden">POS</option>
                             <option value="all" className="hidden md:block">POS</option>
                             {availablePos.map(p=><option key={p} value={p}>{p}</option>)}
                         </select>
-                        
                         <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}>
                             <option value="all" className="md:hidden">Thm</option>
                             <option value="all" className="hidden md:block">Theme</option>
                             {availableThemes.map(t=><option key={t} value={t}>{t}</option>)}
                         </select>
-                        
                         <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset"><RotateCcw size={14}/></button>
-
-                        {/* Divider: Desktop Only */}
                         <div className="hidden md:block w-px h-6 bg-slate-200 mx-2"></div>
-
-                        {/* Sort & Action: Desktop(Right Aligned), Mobile(New Line) */}
                         <div className="w-full md:w-auto md:ml-auto flex items-center gap-2 pt-2 md:pt-0 border-t border-slate-50 md:border-0 mt-1 md:mt-0">
                              <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase">
                                  <ArrowUpDown size={12}/> <span className="hidden md:inline">Sort:</span>
                              </div>
-                             
-                             {/* Mobile: Width Auto (fits content), Desktop: Auto */}
                              <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-auto focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}>
                                  <option value="recent">Recent</option>
                                  <option value="review_soon">Review</option>
                                  <option value="level_asc">Level</option>
                              </select>
-                             
                              <button onClick={()=>setShowArchived(!showArchived)} className={`ml-auto md:ml-0 text-[10px] md:text-xs font-bold px-2 py-1.5 md:px-3 md:py-2 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>
                                  {showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? <span className="hidden md:inline">Back to Active</span> : <span className="hidden md:inline">View Archive</span>}
-                                 {/* Mobile Label Override */}
                                  <span className="md:hidden">{showArchived ? 'Active' : 'Archived'}</span>
                              </button>
                         </div>
                     </div>
                 </div>
 
-                {/* List: Compact Cards */}
                 <div className="flex-1 overflow-y-auto p-3 md:p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
@@ -1480,7 +1458,7 @@ ${sentencesStr}
 
           {/* REVIEW TAB */}
           {mainTab === 'review' && (
-             <div className="max-w-4xl mx-auto h-full flex flex-col justify-center min-w-0">
+             <div className="max-w-4xl mx-auto h-full flex flex-col justify-center min-w-0 pb-16 md:pb-0">
                 <div className="h-14 bg-white rounded-t-3xl border-b border-slate-100 flex items-center justify-between px-6 shrink-0 shadow-sm mb-4">
                     <div className="flex items-center gap-2"><span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">{reviewQueue.length > 0 ? `Queue: ${reviewQueue.length}` : 'Queue Empty'}</span></div>
                     <div className="flex items-center gap-2"><span className="text-xs font-bold text-slate-400">Filter:</span><select className="text-xs font-bold bg-transparent outline-none text-slate-600 border-b border-slate-300 pb-0.5 cursor-pointer" value={reviewFilterLang} onChange={(e) => setReviewFilterLang(e.target.value as any)}><option value="all">All</option>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.code.toUpperCase()}</option>)}</select></div>
@@ -1488,9 +1466,8 @@ ${sentencesStr}
                 {reviewQueue.length > 0 && reviewQueue[0] ? (
                     <div className="w-full md:w-[600px] mx-auto min-h-[400px] relative bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden cursor-pointer flex flex-col" onClick={() => setIsReviewFlipped(!isReviewFlipped)}>
                         
-                        {/* 🔴 修复 4: Review Card Header (添加 Archive 按钮) */}
+                        {/* Review Card Header (Archive Button) */}
                         <div className="h-12 bg-slate-50 border-b border-slate-100 flex items-center justify-between px-6 shrink-0">
-                            {/* Left: Archive Button (New) */}
                             <button 
                                 onClick={(e) => { 
                                     e.stopPropagation(); 
@@ -1504,8 +1481,6 @@ ${sentencesStr}
                             >
                                 <Archive size={18}/>
                             </button>
-
-                            {/* Right: Flag */}
                             <span className="text-2xl">{getFlag(reviewQueue[0].entry.lang)}</span>
                         </div>
 
@@ -1535,11 +1510,9 @@ ${sentencesStr}
                 )}
              </div>
           )}
-        </main> {/* ✅ 核心修复：在这里闭合 MAIN 标签 */}
+      </main>
 
-      {/* --- Modals (放在 Main 之外，防止被 overflow hidden 裁剪) --- */}
-
-      {/* AI Story Modal */}
+      {/* Modals */}
       {showStoryModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
               <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -1556,7 +1529,6 @@ ${sentencesStr}
           </div>
       )}
 
-      {/* Verb Conjugation Modal */}
       {showConjugationModal && entry?.conjugations && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
               <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -1595,8 +1567,8 @@ ${sentencesStr}
           </div>
       )}
 
-      {/* Mobile Nav (Fixed Bottom) - 重新加回底部导航 */}
-      <div className="md:hidden shrink-0 bg-white border-t border-slate-200 z-50 flex justify-around py-2 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+      {/* Mobile Nav */}
+      <div className="md:hidden shrink-0 bg-white border-t border-slate-200 z-50 flex justify-around py-2 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] fixed bottom-0 w-full">
         {['dictionary', 'playground', 'library', 'review'].map(tab => (
             <button key={tab} onClick={() => setMainTab(tab as any)} className={`flex flex-col items-center gap-1 p-1 ${mainTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
                 {tab==='dictionary'?<BookOpen size={20}/>:tab==='playground'?<Gamepad2 size={20}/>:tab==='library'?<Library size={20}/>:<RefreshCw size={20}/>}
@@ -1605,6 +1577,6 @@ ${sentencesStr}
         ))}
       </div>
 
-    </div> 
+    </div>
   );
 }
