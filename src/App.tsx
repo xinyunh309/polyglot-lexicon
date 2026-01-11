@@ -5,7 +5,7 @@ import {
   Wand2, RotateCcw, Lightbulb, Flame, ChevronLeft, MessageCircle,
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Image as ImageIcon, Gamepad2, Trash2,
-  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Clock, Calendar,
+  Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Clock, 
   Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
@@ -82,9 +82,9 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
   { code: 'nl', label: 'NL', voiceCode: 'nl-NL', flag: '🇳🇱' },
   { code: 'ru', label: 'RU', voiceCode: 'ru-RU', flag: '🇷🇺' },
   { code: 'ar', label: 'AR', voiceCode: 'ar-XA', flag: '🇸🇦' },
-  { code: 'el', label: 'EL', voiceCode: 'el-GR', flag: '🇬🇷' }, // 新增: 希腊语
-  { code: 'sv', label: 'SV', voiceCode: 'sv-SE', flag: '🇸🇪' }, // 新增: 瑞典语
-  { code: 'tr', label: 'TR', voiceCode: 'tr-TR', flag: '🇹🇷' }, // 新增: 土耳其语
+  { code: 'el', label: 'EL', voiceCode: 'el-GR', flag: '🇬🇷' },
+  { code: 'sv', label: 'SV', voiceCode: 'sv-SE', flag: '🇸🇪' },
+  { code: 'tr', label: 'TR', voiceCode: 'tr-TR', flag: '🇹🇷' },
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
@@ -212,7 +212,6 @@ interface ChatMessage { role: 'user' | 'ai'; text: string; timestamp: number; }
 // 4. 组件 (Components)
 // ==========================================
 
-// ✅ Updated: Uses GEMINI_SIMPLE_TTS_MODEL for basic buttons
 const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: string; lang: Language, size?: number, label?: string, minimal?: boolean }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -232,7 +231,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     
     setIsLoading(true);
     try {
-      // Uses the simple/flash preview for buttons
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -509,7 +507,7 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-// ✅ Playground Audio (智能性别分配 + 鲁棒性增强)
+  // ✅ Playground Audio (智能性别分配 + 鲁棒性增强)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
@@ -524,7 +522,7 @@ ${sentencesStr}
           const FEMALE_VOICES = ['Kore', 'Aoede'];
           
           let isFemale = false;
-          // 规则1: 以 'a' 结尾通常是女性 (Maria, Laura)，除了特定例外 (Luca, Andrea 这种复杂的暂不处理，Mario 已被下面的规则涵盖)
+          // 规则1: 以 'a' 结尾通常是女性 (Maria, Laura)，除了特定例外
           if (lower.endsWith('a')) isFemale = true;
           // 规则2: 常见例外覆盖
           if (['mario', 'pietro', 'paolo', 'luca', 'andrea', 'nicola'].some(n => lower.includes(n))) isFemale = false;
@@ -532,11 +530,9 @@ ${sentencesStr}
 
           const pool = isFemale ? FEMALE_VOICES : MALE_VOICES;
           
-          // 尝试从对应性别的池子中选一个还没用过的声音
           for (const voice of pool) {
               if (!assignedVoices.has(voice)) return voice;
           }
-          // 如果池子空了，随机选一个
           return pool[Math.floor(Math.random() * pool.length)];
       };
 
@@ -549,12 +545,12 @@ ${sentencesStr}
           const usedVoices = new Set<string>();
           
           lines.forEach(line => {
-              // 匹配 Name: 或 Name： (兼容中英文冒号)
+              // 匹配 Name: 或 Name：
               const match = line.match(/^([^:：]+)[:：]/);
               if (match) {
-                  const name = match[1].trim(); // 关键：去除空格，确保匹配准确
+                  const name = match[1].trim(); 
                   if (!speakerMap.has(name)) {
-                      // 限制最多 5 人，防止 400 Bad Request
+                      // 限制最多 5 人
                       if (distinctSpeakers.length < 5) {
                           const voiceName = getVoiceForName(name, usedVoices);
                           speakerMap.set(name, voiceName);
@@ -576,7 +572,6 @@ ${sentencesStr}
                   }
               };
           } else {
-              // 未检测到对话格式，回退到单人
               proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
           }
       } else {
@@ -615,7 +610,7 @@ ${sentencesStr}
 
           if (!response.ok) {
               const errText = await response.text();
-              console.error("Pro TTS Error Detail:", errText); // 打印详细错误信息以便调试
+              console.error("Pro TTS Error Detail:", errText);
               throw new Error(`Pro TTS failed: ${response.status}`);
           }
           
@@ -630,9 +625,7 @@ ${sentencesStr}
       } catch (e) {
           console.warn("Falling back to Flash TTS...", e);
           try {
-              // 降级：强制使用单人男/女声（避免 Multi-speaker 配置导致 Flash 报错）
               const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
-              
               const response = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
                 {
@@ -658,16 +651,13 @@ ${sentencesStr}
   };
 
   // --- Dictionary AI Logic ---
-  // 1. 修改 handleGenerate：增加 overrideLang 参数
   const handleGenerate = async (overrideWord?: string, overrideLang?: Language) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
     
-    // 检查缓存
     if (inputMode === 'word') {
         const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === target.toLowerCase());
         if (existingItem) { 
-            // 如果缓存里的词有语言信息，也同步更新界面语言
             if (existingItem.entry.lang) setCurrentLang(existingItem.entry.lang);
             setEntry(existingItem.entry); 
             setGeneratedEntries([existingItem.entry]); 
@@ -680,29 +670,22 @@ ${sentencesStr}
     
     setIsGenerating(true); setMainTab('dictionary');
 
-    // --- 核心修复逻辑 ---
     let targetLangCode = currentLang;
     let shouldUseAuto = isAutoLang;
     
     if (overrideLang) {
-        // 情况 A: 明确指定了语言 (Cross-ref, Related Words)
-        // 强制切换到该语言，并关闭自动检测
         targetLangCode = overrideLang;
-        setCurrentLang(overrideLang); // 同步更新 UI 下拉框
+        setCurrentLang(overrideLang);
         shouldUseAuto = false; 
     } else if (overrideWord) {
-        // 情况 B: 跳转但未指定语言 (通常是同义词/反义词)
-        // 默认沿用当前词条的语言 (因为同义词通常是同语言)
         if (entry?.lang) {
             targetLangCode = entry.lang;
             setCurrentLang(entry.lang);
             shouldUseAuto = false;
         } else {
-            shouldUseAuto = true; //以此保底
+            shouldUseAuto = true;
         }
     } else {
-        // 情况 C: 用户手动输入
-        // 维持原逻辑：看 isAutoLang 状态
         shouldUseAuto = isAutoLang;
     }
 
@@ -797,7 +780,6 @@ ${sentencesStr}
     }
   };
 
-  // 2. 修改 handleJump：增加 lang 参数并传给 handleGenerate
   const handleJump = (word: string, lang?: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
       setGeneratedImage(null); 
@@ -840,67 +822,46 @@ ${sentencesStr}
   const handleAutoCluster = async () => {
       setIsClustering(true);
       try {
-          // 1. 收集现有的杂乱数据
           const themes = [...new Set(savedItems.map(i => i.entry.theme))];
           const posList = [...new Set(savedItems.map(i => i.entry.pos))];
           
-          // 2. 构建清洗指令
           const prompt = `
-          Role: Data Cleaner for Vocabulary App.
-          Task 1 (POS): Standardize these Part-of-Speech tags to Standard Chinese (e.g., noun->名词, v.->动词, adj->形容词). 
+          Role: Data Cleaner.
+          Task 1 (POS): Standardize to Chinese (noun->名词, v.->动词). 
           Input POS: ${JSON.stringify(posList)}
-          
-          Task 2 (Themes): Group these themes into 8-10 broad Chinese categories (e.g., 商业, 科技, 生活, 情感, 自然).
+          Task 2 (Themes): Group into 8-10 Chinese categories.
           Input Themes: ${JSON.stringify(themes)}
-          
-          Output JSON strictly: { "posMap": {"old_pos": "new_cn_pos"}, "themeMap": {"old_theme": "new_cn_theme"} }
+          Output JSON strictly: { "posMap": {"old": "new"}, "themeMap": {"old": "new"} }
           `;
 
           const result = await callGemini(prompt, true);
-          
           if (result) {
               const data = JSON.parse(result);
               const posMap = data.posMap || {};
               const themeMap = data.themeMap || {};
-              
               const batch = writeBatch(db);
               let updateCount = 0;
 
               savedItems.forEach(item => {
                   let needsUpdate = false;
                   const updates: any = {};
-                  
-                  // Check POS
                   if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) {
                       updates['entry.pos'] = posMap[item.entry.pos];
                       needsUpdate = true;
                   }
-                  
-                  // Check Theme
                   if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) {
                       updates['entry.theme'] = themeMap[item.entry.theme];
                       needsUpdate = true;
                   }
-
                   if (needsUpdate) {
                       batch.update(doc(db, 'vocabulary', item.id), updates);
                       updateCount++;
                   }
               });
-
-              if (updateCount > 0) {
-                  await batch.commit();
-                  alert(`✅ Cleaned up ${updateCount} items! (POS & Themes standardized)`);
-              } else {
-                  alert("Data is already clean!");
-              }
+              if (updateCount > 0) await batch.commit();
+              alert(`✅ Cleaned ${updateCount} items.`);
           }
-      } catch (e) { 
-          console.error(e); 
-          alert("Cluster failed. Check console.");
-      } finally {
-          setIsClustering(false);
-      }
+      } catch (e) { console.error(e); } finally { setIsClustering(false); }
   };
 
   const handleSmartEnrich = async () => {
@@ -931,7 +892,6 @@ ${sentencesStr}
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
-    
     setSaveStatus('saved'); 
     
     if (exist) {
@@ -941,7 +901,6 @@ ${sentencesStr}
       const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
       await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
     }
-    
     setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
@@ -951,24 +910,10 @@ ${sentencesStr}
       try {
           let nextStage = item.stage;
           let nextDate = Date.now();
-
-          if (action === 'reset') {
-              nextStage = 0;
-              // Reset sets date to now (review again immediately or soon)
-          } else if (action === 'remember') {
-              nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
-              nextDate = Date.now() + INTERVALS[nextStage] * 86400000;
-          } else if (action === 'boost') {
-              // Boost: Advance stage but force 14 days interval
-              nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
-              nextDate = Date.now() + 14 * 86400000; 
-          }
-
-          await updateDoc(doc(db, 'vocabulary', item.id), { 
-              nextReviewDate: nextDate, 
-              stage: nextStage, 
-              lastReviewedDate: Date.now() 
-          });
+          if (action === 'reset') { nextStage = 0; } 
+          else if (action === 'remember') { nextStage = Math.min(item.stage + 1, INTERVALS.length - 1); nextDate = Date.now() + INTERVALS[nextStage] * 86400000; } 
+          else if (action === 'boost') { nextStage = Math.min(item.stage + 1, INTERVALS.length - 1); nextDate = Date.now() + 14 * 86400000; }
+          await updateDoc(doc(db, 'vocabulary', item.id), { nextReviewDate: nextDate, stage: nextStage, lastReviewedDate: Date.now() });
       } catch(e) { console.error(e); }
       if (reviewQueue.length <= 1) setMainTab('library');
   };
@@ -997,38 +942,16 @@ ${sentencesStr}
       if (isGeneratingImage) return;
       setIsGeneratingImage(true);
       try {
-          // Concrete prompt for better results
           const prompt = `A concrete, realistic scene depicting the meaning of '${entry.word}': ${entry.meaning}. High quality, clear details, cinematic lighting.`;
-          
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, 
-            { 
-              method: 'POST', 
-              headers: { 'Content-Type': 'application/json' }, 
-              body: JSON.stringify({ 
-                instances: [{ prompt: prompt }], 
-                parameters: { sampleCount: 1 } 
-              }) 
-            }
-          );
-          
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instances: [{ prompt: prompt }], parameters: { sampleCount: 1 } }) });
           if (!response.ok) {
-              console.warn("Imagen API failed/restricted, switching to Pollinations fallback.");
               const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
-              const img = new Image();
-              img.src = pollinationsUrl;
-              img.onload = () => {
-                  setGeneratedImage(pollinationsUrl);
-                  setIsGeneratingImage(false);
-              };
-              img.onerror = () => {
-                  throw new Error("Fallback failed");
-              };
+              const img = new Image(); img.src = pollinationsUrl;
+              img.onload = () => { setGeneratedImage(pollinationsUrl); setIsGeneratingImage(false); };
+              img.onerror = () => { throw new Error("Fallback failed"); };
           } else {
              const data = await response.json();
-             if (data.predictions?.[0]?.bytesBase64Encoded) {
-                 setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
-             }
+             if (data.predictions?.[0]?.bytesBase64Encoded) setGeneratedImage(`data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`);
              setIsGeneratingImage(false);
           }
       } catch (e) { 
@@ -1054,52 +977,23 @@ ${sentencesStr}
    
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Contextually Related based on Meaning (Score > 5)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
-    
-    // Helper to check text inclusion
-    const checkTextOverlap = (text1: string, text2: string) => {
-        if (!text1 || !text2) return false;
-        return text1.toLowerCase().includes(text2.toLowerCase());
-    };
-
-    const scored = savedItems
-        .filter(item => item.id !== (isCurrentSaved?.id || '')) 
-        .map(item => {
+    const checkTextOverlap = (text1: string, text2: string) => { if (!text1 || !text2) return false; return text1.toLowerCase().includes(text2.toLowerCase()); };
+    const scored = savedItems.filter(item => item.id !== (isCurrentSaved?.id || '')).map(item => {
             let score = 0;
             const itemWordLower = (item.entry.word || '').toLowerCase();
-            
-            // Safety check for arrays
             const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
             const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
             const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
-
-            // 1. Direct Synonym / CrossRef Match (High Relevance)
-            const isSemanticMatch = 
-                itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) ||
-                entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) ||
-                itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) ||
-                entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
-            
+            const isSemanticMatch = itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) || entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) || itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) || entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
             if (isSemanticMatch) score += 10;
-
-            // 2. Definition Overlap (Medium Relevance)
-            if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) {
-                score += 3;
-            }
-
-            // 3. Metadata Match (Low Relevance - not enough alone)
+            if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) { score += 3; }
             if (item.entry.pos === entry.pos) score += 0.5;
-            
             return { item, score };
-        })
-        .filter(x => x.score > 2) // Filter low relevance
-        .sort((a, b) => b.score - a.score) 
-        .slice(0, 6); 
-    
+        }).filter(x => x.score > 2).sort((a, b) => b.score - a.score).slice(0, 6); 
     return scored.map(x => x.item.entry);
   }, [entry, savedItems, isCurrentSaved]);
 
@@ -1119,9 +1013,7 @@ ${sentencesStr}
   const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
-    // 🔴 修复 1: 根容器采用混合布局
-    // Mobile: fixed inset-0 (锁死视口，实现 App 质感，解决 Nav 和 Playground 高度问题)
-    // Desktop: static min-h-screen (恢复网页流式布局，允许自然滚动)
+    // 🔴 修复 1: 混合布局 (Mobile: Fixed / Desktop: Flow)
     <div className="fixed inset-0 md:static md:min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col safe-p-b">
       
       {/* Header */}
@@ -1147,14 +1039,10 @@ ${sentencesStr}
         </header>
       </div>
 
-      {/* 🔴 修复 2: Main 容器
-         - Mobile: flex-1 overflow-hidden (强制子元素自己处理滚动，防止撑开页面)
-         - Desktop: overflow-visible (允许内容自然撑开)
-      */}
+      {/* 🔴 修复 2: Main Layout (Mobile: Hidden / Desktop: Visible) */}
       <main className="flex-1 flex flex-col min-w-0 w-full max-w-7xl mx-auto p-4 md:p-8 pt-2 md:pt-0 overflow-hidden md:overflow-visible">
           
           {/* DICTIONARY TAB */}
-          {/* DICTIONARY TAB (Full Correct Code) */}
           {mainTab === 'dictionary' && (
             <div className="h-full overflow-y-auto md:h-auto md:overflow-visible grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 items-start custom-scrollbar pb-2 md:pb-0">
               {/* Left: Input Panel */}
@@ -1299,11 +1187,11 @@ ${sentencesStr}
 
                         {/* Content Body */}
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
-                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Visual Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
+                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
                              
                              <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
                              
-                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg md:text-xl font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
                              
                              <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
                              
@@ -1327,7 +1215,6 @@ ${sentencesStr}
                                 </div>
                              </div>
                         </div>
-                        
                         <div className="bg-slate-900 px-4 md:px-6 py-2 md:py-3 flex flex-col">
                             <div className="flex justify-between items-center"><span className="text-[10px] md:text-xs font-mono text-slate-400 truncate max-w-[70%]">{generatedEntries.length > 1 ? `Markdown Source (${generatedEntries.length} words)` : "Markdown Source"}</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
                             {showMarkdown && (<pre className="mt-2 text-[10px] md:text-xs text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
@@ -1340,15 +1227,12 @@ ${sentencesStr}
             </div>
           )}
 
-          {/* PLAYGROUND TAB */}
+          {/* PLAYGROUND TAB (Compact Mobile Layout) */}
           {mainTab === 'playground' && (
-            // 🔴 修复 3: 高度逻辑分离
-            // Mobile: h-full (占满 Mobile main 容器)
-            // Desktop: h-[calc(100vh-140px)] (固定高度，确保 Grid 布局正常)
-            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full md:h-[calc(100vh-140px)] pb-16 md:pb-0">
-                {/* Left: Input */}
-                {/* Mobile h-[60%] / Desktop h-full */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
+            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full">
+                {/* Left: Input & TTS */}
+                {/* Mobile: h-[40%] / Desktop: h-full */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[40%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
@@ -1356,8 +1240,10 @@ ${sentencesStr}
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
+                    {/* Compact Input */}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
+                    {/* Controls Row */}
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
@@ -1372,13 +1258,14 @@ ${sentencesStr}
                 </div>
                 
                 {/* Right: AI Chat */}
-                {/* Mobile: flex-1 (自动填满剩余 60%) / Desktop: h-full */}
+                {/* Mobile: flex-1 (fills 60%) / Desktop: h-full */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
                     <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
                         <div className="flex bg-white rounded-lg p-0.5 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={10}/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={10}/> Test</button></div>
                     </div>
                     
+                    {/* Chat Messages */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/30 custom-scrollbar">
                         {playgroundChat.length === 0 && (<div className="text-center py-6 text-slate-400"><Bot size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Start chatting below!</p></div>)}
                         {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
@@ -1386,6 +1273,7 @@ ${sentencesStr}
                         <div ref={playgroundEndRef} />
                     </div>
                     
+                    {/* Chat Input */}
                     <div className="p-2 border-t border-slate-100 bg-white shrink-0"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Message..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={16}/></button></div></div>
                 </div>
             </div>
@@ -1393,9 +1281,6 @@ ${sentencesStr}
            
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
-            // Mobile: h-full (内部滚动)
-            // Desktop: h-[calc(100vh-140px)] (维持固定高度，或改 h-auto 让它滚动)
-            // 这里恢复为固定高度，因为 Library 通常需要内部滚动条来固定 Filter 栏
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full md:h-[calc(100vh-140px)] overflow-hidden pb-16 md:pb-0">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-2">
