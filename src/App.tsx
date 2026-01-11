@@ -27,7 +27,7 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const IMAGEN_MODEL = "imagen-3.0-fast-generate-001"; 
 
 // TTS Models Strategy
-// Playground uses PRO for high quality long text
+// Playground uses PRO for high quality long text & dialogues
 const TTS_MODEL_PLAYGROUND = "gemini-2.5-pro-tts"; 
 // Global (Dictionary/Review) uses FLASH for speed and quota efficiency
 const TTS_MODEL_GLOBAL = "gemini-2.5-flash-tts";
@@ -500,100 +500,149 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ FIX: Native Multi-Speaker TTS Logic (One Shot)
+  // Helper to execute the fetch and play
+  const executeTTSRequest = async (model: string, body: any, action: 'play' | 'download') => {
+      const response = await fetch(
+           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+           {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify(body),
+           }
+      );
+
+      if (!response.ok) {
+          const errText = await response.text();
+          console.error("TTS API Error Details:", errText);
+          throw new Error(`API Error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+      if (audioData) {
+          const wavUrl = pcmToWav(audioData);
+          if (action === 'play') {
+              new Audio(wavUrl).play();
+          } else {
+              const link = document.createElement('a');
+              link.href = wavUrl;
+              link.download = `polyglot_audio_${Date.now()}.wav`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+          }
+      }
+  };
+
+  // ✅ FIX: Enhanced Multi-Speaker TTS Logic (Supports 5+ Speakers)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       try {
+          // 1. Initial Request Body
           let requestBody: any = {
               contents: [{ parts: [{ text: playgroundInput }] }], 
               generationConfig: { responseModalities: ["AUDIO"] }
           };
 
-          // 1. Single Speaker (Manual)
+          // 2. Determine Mode & Config
           if (ttsMode !== 'dialogue') {
+             // --- Single Speaker Mode ---
              const voiceName = ttsMode === 'female' ? 'Kore' : 'Fenrir';
              requestBody.generationConfig.speechConfig = {
                  voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
              };
-          } 
-          // 2. Dialogue Mode (Native Multi-Speaker)
-          else {
-              // A. Analyze Speakers & Gender
-              const prompt = `Analyze this dialogue. Identify the distinct speaker names (found exactly before colons).
-              Text: "${playgroundInput.substring(0, 500)}"
-              Output JSON: { "speakers": [ {"name": "ExactNameFromText", "gender": "female"}, {"name": "OtherName", "gender": "male"} ] }
-              If format is not "Name: Content", return empty speakers array.`;
+             
+             // Execute Request (Using Pro for Playground as requested)
+             await executeTTSRequest(TTS_MODEL_PLAYGROUND, requestBody, action);
+
+          } else {
+              // --- Dialogue Mode (Multi-Speaker) ---
+              // A. Analyze Speakers
+              const prompt = `Analyze this dialogue text. 
+              TASK: Identify ALL distinct speaker names found exactly before colons (e.g., "Alice:", "Bob:", "Narrator:").
+              Text: "${playgroundInput.substring(0, 800)}"
+              
+              RULES:
+              1. Extract the EXACT name string used in the text.
+              2. Guess gender if possible (female/male), default to 'male'.
+              3. Return JSON: { "speakers": [ {"name": "Alice", "gender": "female"}, {"name": "Bob", "gender": "male"}, {"name": "Charlie", "gender": "male"} ] }
+              4. If no speakers detected, return empty array.`;
               
               const analysis = await callGemini(prompt, true);
               let speakerConfig: any[] = [];
               
+              // Available Voices Pool (Google Official)
+              const voicePool = [
+                  { name: 'Kore', gender: 'female' },
+                  { name: 'Fenrir', gender: 'male' },
+                  { name: 'Puck', gender: 'male' },
+                  { name: 'Aoede', gender: 'female' },
+                  { name: 'Charon', gender: 'male' }
+              ];
+
               try {
                   if (analysis) {
                       const parsed = JSON.parse(analysis);
                       if (parsed.speakers && parsed.speakers.length >= 1) {
-                           // Map to official voices
-                           speakerConfig = parsed.speakers.map((s: any) => ({
-                               speaker: s.name,
-                               voiceConfig: { 
-                                   prebuiltVoiceConfig: { 
-                                        voiceName: s.gender.toLowerCase().includes('female') ? 'Kore' : 'Fenrir' 
-                                   } 
+                           // Dynamic Voice Assignment Strategy
+                           let usedVoices = new Set();
+                           
+                           speakerConfig = parsed.speakers.map((s: any, index: number) => {
+                               // 1. Try to match gender first
+                               let voiceObj = voicePool.find(v => 
+                                   v.gender === s.gender.toLowerCase() && !usedVoices.has(v.name)
+                               );
+                               
+                               // 2. If no gender match or all taken, take ANY unused voice
+                               if (!voiceObj) {
+                                   voiceObj = voicePool.find(v => !usedVoices.has(v.name));
                                }
-                           }));
+                               
+                               // 3. If ALL 5 voices used, cycle back (Modulo)
+                               if (!voiceObj) {
+                                   voiceObj = voicePool[index % voicePool.length];
+                               }
+
+                               // Mark as used
+                               if (voiceObj) usedVoices.add(voiceObj.name);
+
+                               return {
+                                   speaker: s.name,
+                                   voiceConfig: { 
+                                       prebuiltVoiceConfig: { 
+                                            voiceName: voiceObj ? voiceObj.name : 'Puck' 
+                                       } 
+                                   }
+                               };
+                           });
                       }
                   }
               } catch(e) { console.warn("Analysis failed", e); }
 
               // B. Construct Native Config or Fallback
               if (speakerConfig.length > 0) {
-                  // NATIVE API STRUCTURE
                   requestBody.generationConfig.speechConfig = {
                       multiSpeakerVoiceConfig: {
                           speakerVoiceConfigs: speakerConfig
                       }
                   };
               } else {
-                  // Fallback: If analysis failed, use default voice
+                   // Fallback if analysis found 0 speakers
                    requestBody.generationConfig.speechConfig = {
                        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
                    };
               }
-          }
 
-          // 3. Execute Request
-          // NOTE: Using PRO model for Playground TTS (higher quality for dialogues)
-          const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL_PLAYGROUND}:generateContent?key=${apiKey}`,
-               {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify(requestBody),
-               }
-          );
-
-          if (!response.ok) throw new Error("Audio API Error");
-          const data = await response.json();
-          const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-          if (audioData) {
-              const wavUrl = pcmToWav(audioData);
-              if (action === 'play') {
-                  new Audio(wavUrl).play();
-              } else {
-                  const link = document.createElement('a');
-                  link.href = wavUrl;
-                  link.download = `polyglot_audio_${Date.now()}.wav`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-              }
+              // Execute Request (Using Pro Model for Dialogue)
+              await executeTTSRequest(TTS_MODEL_PLAYGROUND, requestBody, action);
           }
 
       } catch (e) {
           console.error(e);
-          alert("Audio generation failed. Check quota or format.");
+          alert("Audio generation failed. Please check inputs or quota.");
       } finally {
           setIsProcessingAudio(false);
       }
