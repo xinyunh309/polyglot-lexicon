@@ -22,13 +22,13 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Models Configuration
-const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
-const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons)
-const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality, Multi-speaker (Playground)
+// Models
+const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; 
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
+const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
-// Voice Pool for Multi-speaker
+// Voices
 const AVAILABLE_VOICES = ['Kore', 'Fenrir', 'Puck', 'Aoede', 'Charon'];
 
 const userFirebaseConfig = {
@@ -176,11 +176,11 @@ const formatPOS = (pos: string): string => {
     return pos; 
 };
 
+const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
+
 // ==========================================
 // 3. 核心类型 (Types)
 // ==========================================
-
-const isNoun = (pos: string): boolean => formatPOS(pos) === '名词';
 
 interface VocabEntry {
   word: string; 
@@ -319,7 +319,7 @@ export default function App() {
   const [playgroundUserMsg, setPlaygroundUserMsg] = useState('');
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
     
-  // Playground 音频状态
+  // Playground Audio
   const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
@@ -440,7 +440,7 @@ ${sentencesStr}
       }
   };
 
-  // --- AI Logic (Basic) ---
+  // --- AI Logic ---
   const callGemini = async (prompt: string, isJson: boolean = false) => {
     try {
       if (requestCache.has(prompt)) return requestCache.get(prompt);
@@ -461,7 +461,7 @@ ${sentencesStr}
     } catch (error) { console.error("Gemini API Error:", error); return null; }
   };
 
-  // --- Playground Logic (Chat) ---
+  // --- Playground Logic ---
   const handlePlaygroundChat = async () => {
     if (!playgroundUserMsg.trim()) return;
     const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
@@ -475,7 +475,6 @@ ${sentencesStr}
         systemPrompt = `
             You are a helpful language tutor for ${langLabel}.
             The user provided this context text: "${playgroundInput.substring(0, 500)}...".
-             
             Goal: Engage in a natural conversation about this text or topic.
             - Correct any major grammar mistakes gently in your response.
             - Keep the conversation flowing.
@@ -491,9 +490,7 @@ ${sentencesStr}
 
         systemPrompt = `
             You are a strict language tutor for ${langLabel}.
-             
             GOAL: Help the user practice these specific words from their vocabulary list: [ ${wordList || "No specific words found, just chat"} ].
-             
             INSTRUCTIONS:
             1. Ask a question related to the input text: "${playgroundInput.substring(0, 300)}...".
             2. TRY to guide the user to use one of the target words in their answer.
@@ -507,7 +504,6 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio (智能性别分配 + 鲁棒性增强)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
@@ -515,42 +511,30 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
-      // 简单的性别推断逻辑
       const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
           const lower = name.toLowerCase();
           const MALE_VOICES = ['Fenrir', 'Puck', 'Charon'];
           const FEMALE_VOICES = ['Kore', 'Aoede'];
-          
           let isFemale = false;
-          // 规则1: 以 'a' 结尾通常是女性 (Maria, Laura)，除了特定例外
           if (lower.endsWith('a')) isFemale = true;
-          // 规则2: 常见例外覆盖
           if (['mario', 'pietro', 'paolo', 'luca', 'andrea', 'nicola'].some(n => lower.includes(n))) isFemale = false;
           if (['laura', 'maria', 'anna', 'paola', 'elena'].some(n => lower.includes(n))) isFemale = true;
-
           const pool = isFemale ? FEMALE_VOICES : MALE_VOICES;
-          
-          for (const voice of pool) {
-              if (!assignedVoices.has(voice)) return voice;
-          }
+          for (const voice of pool) { if (!assignedVoices.has(voice)) return voice; }
           return pool[Math.floor(Math.random() * pool.length)];
       };
 
       let proSpeechConfig: any = {};
-      
       if (isDialogue) {
           const lines = playgroundInput.split('\n');
           const speakerMap = new Map<string, string>();
           const distinctSpeakers: string[] = [];
           const usedVoices = new Set<string>();
-          
           lines.forEach(line => {
-              // 匹配 Name: 或 Name：
               const match = line.match(/^([^:：]+)[:：]/);
               if (match) {
                   const name = match[1].trim(); 
                   if (!speakerMap.has(name)) {
-                      // 限制最多 5 人
                       if (distinctSpeakers.length < 5) {
                           const voiceName = getVoiceForName(name, usedVoices);
                           speakerMap.set(name, voiceName);
@@ -560,17 +544,9 @@ ${sentencesStr}
                   }
               }
           });
-
           if (distinctSpeakers.length > 0) {
               console.log("🎙️ Speakers & Voices:", Object.fromEntries(speakerMap));
-              proSpeechConfig = {
-                  multiSpeakerVoiceConfig: {
-                      speakerVoiceConfigs: distinctSpeakers.map(name => ({
-                          speaker: name,
-                          voiceConfig: { prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } }
-                      }))
-                  }
-              };
+              proSpeechConfig = { multiSpeakerVoiceConfig: { speakerVoiceConfigs: distinctSpeakers.map(name => ({ speaker: name, voiceConfig: { prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } } })) } };
           } else {
               proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
           }
@@ -580,74 +556,28 @@ ${sentencesStr}
 
       const processAudioData = (base64Audio: string) => {
           const wavUrl = pcmToWav(base64Audio);
-          if (action === 'play') {
-              new Audio(wavUrl).play();
-          } else {
-              const link = document.createElement('a');
-              link.href = wavUrl;
-              link.download = `polyglot_tts_${Date.now()}.wav`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-          }
+          if (action === 'play') { new Audio(wavUrl).play(); } 
+          else { const link = document.createElement('a'); link.href = wavUrl; link.download = `polyglot_tts_${Date.now()}.wav`; document.body.appendChild(link); link.click(); document.body.removeChild(link); }
       };
 
       try {
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: playgroundInput }] }], 
-                    generationConfig: { 
-                        responseModalities: ["AUDIO"], 
-                        speechConfig: proSpeechConfig
-                    }
-                }),
-            }
-          );
-
-          if (!response.ok) {
-              const errText = await response.text();
-              console.error("Pro TTS Error Detail:", errText);
-              throw new Error(`Pro TTS failed: ${response.status}`);
-          }
-          
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: playgroundInput }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: proSpeechConfig } }) });
+          if (!response.ok) { const errText = await response.text(); console.error("Pro TTS Error Detail:", errText); throw new Error(`Pro TTS failed: ${response.status}`); }
           const data = await response.json();
           const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          if (base64Audio) {
-              processAudioData(base64Audio);
-              return;
-          }
+          if (base64Audio) { processAudioData(base64Audio); return; }
           throw new Error("No audio data in Pro response");
-
       } catch (e) {
           console.warn("Falling back to Flash TTS...", e);
           try {
               const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
-              const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: playgroundInput }] }], 
-                        generationConfig: { responseModalities: ["AUDIO"], speechConfig: fallbackConfig }
-                    }),
-                }
-              );
+              const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: playgroundInput }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: fallbackConfig } }) });
               if (!response.ok) throw new Error(`Flash TTS failed: ${response.status}`);
               const data = await response.json();
               const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              if (base64Audio) processAudioData(base64Audio);
-              else alert("Audio generation failed on both models.");
-          } catch (e2) {
-              console.error(e2);
-              alert("TTS Service unavailable.");
-          }
-      } finally {
-          setIsProcessingAudio(false);
-      }
+              if (base64Audio) processAudioData(base64Audio); else alert("Audio generation failed on both models.");
+          } catch (e2) { console.error(e2); alert("TTS Service unavailable."); }
+      } finally { setIsProcessingAudio(false); }
   };
 
   // --- Dictionary AI Logic ---
@@ -659,12 +589,7 @@ ${sentencesStr}
         const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === target.toLowerCase());
         if (existingItem) { 
             if (existingItem.entry.lang) setCurrentLang(existingItem.entry.lang);
-            setEntry(existingItem.entry); 
-            setGeneratedEntries([existingItem.entry]); 
-            setGeneratedIndex(0); 
-            setMainTab('dictionary'); 
-            setInputWord(''); 
-            return; 
+            setEntry(existingItem.entry); setGeneratedEntries([existingItem.entry]); setGeneratedIndex(0); setMainTab('dictionary'); setInputWord(''); return; 
         }
     }
     
@@ -673,21 +598,9 @@ ${sentencesStr}
     let targetLangCode = currentLang;
     let shouldUseAuto = isAutoLang;
     
-    if (overrideLang) {
-        targetLangCode = overrideLang;
-        setCurrentLang(overrideLang);
-        shouldUseAuto = false; 
-    } else if (overrideWord) {
-        if (entry?.lang) {
-            targetLangCode = entry.lang;
-            setCurrentLang(entry.lang);
-            shouldUseAuto = false;
-        } else {
-            shouldUseAuto = true;
-        }
-    } else {
-        shouldUseAuto = isAutoLang;
-    }
+    if (overrideLang) { targetLangCode = overrideLang; setCurrentLang(overrideLang); shouldUseAuto = false; } 
+    else if (overrideWord) { if (entry?.lang) { targetLangCode = entry.lang; setCurrentLang(entry.lang); shouldUseAuto = false; } else { shouldUseAuto = true; } } 
+    else { shouldUseAuto = isAutoLang; }
 
     const targetLangObj = LANGUAGES.find(l => l.code === targetLangCode); 
     const targetLangLabel = targetLangObj?.label || "English";
@@ -695,13 +608,8 @@ ${sentencesStr}
 
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
-     
-    ${shouldUseAuto 
-      ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
-      : `Target Language: ${targetLangLabel} (${targetLangCodeStr}).`}
-     
+    ${shouldUseAuto ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code.` : `Target Language: ${targetLangLabel} (${targetLangCodeStr}).`}
     User Language: Chinese (Simplified).
-
     RULES:
     1. "meaning": Return direct Chinese translation keywords (e.g., '惊叹，令人窒息的'). DO NOT provide a descriptive sentence.
     2. "pos": Return standard part of speech in CHINESE (e.g., 名词, 动词, 形容词).
@@ -713,16 +621,10 @@ ${sentencesStr}
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
     7. "pronunciation": MUST use International Phonetic Alphabet (IPA) inside brackets, e.g., /.../.
-    8. **IMPORTANT FOR JAPANESE/CHINESE**: 
-       - "word" field MUST use Kanji/Hanzi (e.g., '猫').
-       - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
-    9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
-    10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
-    11. **Conjugations (IMPORTANT)**: If it is a VERB, provide a DETAILED 'conjugations' array.
-       - Include Indicative: Present, Imperfect, Future, Compound Past (e.g., Passato Prossimo), Remote/Simple Past (e.g., Passato Remoto).
-       - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
-       - Include: Participles (Present & Past) grouped under a single "Participles" section.
-     
+    8. **IMPORTANT FOR JAPANESE/CHINESE**: "word" MUST use Kanji/Hanzi. "pronunciation" MUST use Kana/Pinyin.
+    9. **Punctuation**: Use CHINESE Punctuation.
+    10. **Lemma**: If input is conjugated, 'word' MUST be the LEMMA. Fill 'morphology'.
+    11. **Conjugations**: If VERB, provide detailed 'conjugations' array.
     JSON SCHEMA:
     {
       "word": "Lemma of ${target}",
@@ -731,10 +633,7 @@ ${sentencesStr}
       "meaning": "string (CN)",
       "level": "string",
       "theme": "string (CN)",
-      "sentences": [
-        {"type": "Common", "target": "string", "translation": "string (CN)"},
-        {"type": "Advanced", "target": "string", "translation": "string (CN)"}
-      ],
+      "sentences": [ {"type": "Common", "target": "string", "translation": "string (CN)"}, {"type": "Advanced", "target": "string", "translation": "string (CN)"} ],
       "synonyms": ["string", "string"],
       "antonyms": ["string"],
       "crossRefs": [{"lang": "code", "word": "string"}],
@@ -745,9 +644,7 @@ ${sentencesStr}
       "pronunciation": "string (IPA)"
     }`;
 
-    const prompt = inputMode === 'word' || overrideWord 
-        ? systemPrompt 
-        : `Extract vocabulary from text. Return JSON ARRAY using schema: ${systemPrompt}. Text: "${target.substring(0, 2000)}"`;
+    const prompt = inputMode === 'word' || overrideWord ? systemPrompt : `Extract vocabulary from text. Return JSON ARRAY using schema: ${systemPrompt}. Text: "${target.substring(0, 2000)}"`;
     
     const result = await callGemini(prompt, true);
     setIsGenerating(false);
@@ -755,26 +652,13 @@ ${sentencesStr}
       try {
         const parsed = JSON.parse(result);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
-        
         const validEntries = entries.map((e: any) => ({ 
-            ...e, 
-            sentences: Array.isArray(e.sentences) ? e.sentences : [], 
-            synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], 
-            antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], 
-            crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], 
-            conjugations: Array.isArray(e.conjugations) ? e.conjugations : [],
-            pos: formatPOS(e.pos), 
-            level: e.level?.toUpperCase()||'B2',
-            originalInput: target !== e.word ? target : undefined
+            ...e, sentences: Array.isArray(e.sentences) ? e.sentences : [], synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], conjugations: Array.isArray(e.conjugations) ? e.conjugations : [], pos: formatPOS(e.pos), level: e.level?.toUpperCase()||'B2', originalInput: target !== e.word ? target : undefined
         }));
-        
         setGeneratedEntries(validEntries); setGeneratedIndex(0); setEntry(validEntries[0]); setGeneratedImage(null);
-        
         if (validEntries[0]?.lang) {
             const detectedCode = validEntries[0].lang.toLowerCase();
-            if (LANGUAGES.some(l => l.code === detectedCode)) {
-                setCurrentLang(detectedCode as Language);
-            }
+            if (LANGUAGES.some(l => l.code === detectedCode)) setCurrentLang(detectedCode as Language);
         }
       } catch (e) { alert("Failed to parse AI response. Please try again."); }
     }
@@ -782,18 +666,13 @@ ${sentencesStr}
 
   const handleJump = (word: string, lang?: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
-      setGeneratedImage(null); 
-      handleGenerate(word, lang as Language);
+      setGeneratedImage(null); handleGenerate(word, lang as Language);
   };
 
   const handleBack = () => {
       if (history.length === 0) return;
       const previous = history[history.length - 1];
-      setHistory(prev => prev.slice(0, -1));
-      setEntry(previous);
-      setGeneratedImage(null); 
-      setGeneratedEntries([previous]); 
-      setGeneratedIndex(0);
+      setHistory(prev => prev.slice(0, -1)); setEntry(previous); setGeneratedImage(null); setGeneratedEntries([previous]); setGeneratedIndex(0);
   };
 
   const handleSmartImport = async () => {
@@ -824,16 +703,7 @@ ${sentencesStr}
       try {
           const themes = [...new Set(savedItems.map(i => i.entry.theme))];
           const posList = [...new Set(savedItems.map(i => i.entry.pos))];
-          
-          const prompt = `
-          Role: Data Cleaner.
-          Task 1 (POS): Standardize to Chinese (noun->名词, v.->动词). 
-          Input POS: ${JSON.stringify(posList)}
-          Task 2 (Themes): Group into 8-10 Chinese categories.
-          Input Themes: ${JSON.stringify(themes)}
-          Output JSON strictly: { "posMap": {"old": "new"}, "themeMap": {"old": "new"} }
-          `;
-
+          const prompt = `Role: Data Cleaner. Task 1 (POS): Standardize to Chinese (noun->名词, v.->动词). Input POS: ${JSON.stringify(posList)} Task 2 (Themes): Group into 8-10 Chinese categories. Input Themes: ${JSON.stringify(themes)} Output JSON strictly: { "posMap": {"old": "new"}, "themeMap": {"old": "new"} }`;
           const result = await callGemini(prompt, true);
           if (result) {
               const data = JSON.parse(result);
@@ -841,22 +711,12 @@ ${sentencesStr}
               const themeMap = data.themeMap || {};
               const batch = writeBatch(db);
               let updateCount = 0;
-
               savedItems.forEach(item => {
                   let needsUpdate = false;
                   const updates: any = {};
-                  if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) {
-                      updates['entry.pos'] = posMap[item.entry.pos];
-                      needsUpdate = true;
-                  }
-                  if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) {
-                      updates['entry.theme'] = themeMap[item.entry.theme];
-                      needsUpdate = true;
-                  }
-                  if (needsUpdate) {
-                      batch.update(doc(db, 'vocabulary', item.id), updates);
-                      updateCount++;
-                  }
+                  if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) { updates['entry.pos'] = posMap[item.entry.pos]; needsUpdate = true; }
+                  if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) { updates['entry.theme'] = themeMap[item.entry.theme]; needsUpdate = true; }
+                  if (needsUpdate) { batch.update(doc(db, 'vocabulary', item.id), updates); updateCount++; }
               });
               if (updateCount > 0) await batch.commit();
               alert(`✅ Cleaned ${updateCount} items.`);
@@ -1013,10 +873,8 @@ ${sentencesStr}
   const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
-    // 🔴 修复 1: 混合布局 (Mobile: Fixed / Desktop: Flow)
     <div className="fixed inset-0 md:static md:min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col safe-p-b">
       
-      {/* Header */}
       <div className="shrink-0 bg-slate-50 z-50 px-4 pt-4 md:px-8 md:pt-8 pb-2 shadow-[0_1px_2px_rgba(0,0,0,0.02)] md:shadow-none transition-all">
         <header className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-7xl mx-auto w-full">
           <div className="flex flex-col items-start w-full md:w-auto">
@@ -1039,13 +897,12 @@ ${sentencesStr}
         </header>
       </div>
 
-      {/* 🔴 修复 2: Main Layout (Mobile: Hidden / Desktop: Visible) */}
       <main className="flex-1 flex flex-col min-w-0 w-full max-w-7xl mx-auto p-4 md:p-8 pt-2 md:pt-0 overflow-hidden md:overflow-visible">
           
           {/* DICTIONARY TAB */}
           {mainTab === 'dictionary' && (
             <div className="h-full overflow-y-auto md:h-auto md:overflow-visible grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 items-start custom-scrollbar pb-2 md:pb-0">
-              {/* Left: Input Panel */}
+              {/* Left Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
                 <div className="flex gap-2 mb-2">
                      <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'}`}>
@@ -1099,13 +956,11 @@ ${sentencesStr}
                 </div>
               </div>
 
-              {/* Right: Card Display */}
+              {/* Right Panel */}
               <div className="lg:col-span-8 min-w-0">
                 {entry ? (
                     <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col relative">
-                        {/* Header Section */}
                         <div className={`bg-slate-50/80 p-4 md:p-8 border-b border-slate-100 relative ${history.length > 0 ? 'pl-10 md:pl-8' : ''}`}>
-                             {/* Back Button */}
                              {history.length > 0 && (
                                  <button onClick={handleBack} className="absolute top-4 left-3 md:left-4 z-20 p-1.5 md:p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-500 transition-all shadow-sm group">
                                      <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
@@ -1123,7 +978,6 @@ ${sentencesStr}
                              )}
 
                              <div className="flex flex-col gap-3">
-                                 {/* 1. Word Title */}
                                  <div className="min-w-0">
                                      {entry.morphology && (
                                          <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold">
@@ -1133,15 +987,12 @@ ${sentencesStr}
                                      <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
                                  </div>
 
-                                 {/* 2. Tags Row (moved UP) + Verb Table Icon Only */}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
                                      {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700 shrink-0"/>}
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
-                                     
-                                     {/* Verb Table: Icon Only */}
                                      {entry.conjugations && entry.conjugations.length > 0 && (
                                          <button onClick={()=>setShowConjugationModal(true)} className="p-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md shrink-0 hover:bg-indigo-100 transition-colors" title="Verb Conjugations">
                                              <Grid3X3 size={14}/>
@@ -1149,11 +1000,7 @@ ${sentencesStr}
                                      )}
                                  </div>
 
-                                 {/* 3. Combined Meta & Actions Row (Merged for PC) */}
-                                 {/* flex-col on Mobile, flex-row on Desktop (md:flex-row) */}
                                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-1 pt-2 border-t border-slate-100 md:border-0 md:pt-0">
-                                     
-                                     {/* Left: Meta Info (Flag, Pronunciation, Audio, Image) */}
                                      <div className="flex items-center gap-3">
                                          <span className="text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
                                          {entry.pronunciation && (
@@ -1166,7 +1013,6 @@ ${sentencesStr}
                                          </div>
                                      </div>
 
-                                     {/* Right: Actions (Save, Archive, Enrich) - Now on same line in PC */}
                                      <div className="flex items-center gap-2 justify-end">
                                         {isCurrentSaved && (
                                             <>
@@ -1176,7 +1022,6 @@ ${sentencesStr}
                                                 <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 rounded-lg border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/></button>
                                             </>
                                         )}
-                                        {/* Save Button */}
                                         <button onClick={handleSmartSave} className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs md:text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
                                             {saveStatus==='saved' ? <CheckCircle size={16}/> : isCurrentSaved ? <><Merge size={16}/> Update</> : <><Save size={16}/> Save</>}
                                         </button>
@@ -1185,13 +1030,10 @@ ${sentencesStr}
                              </div>
                         </div>
 
-                        {/* Content Body */}
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
                              {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
-                             
                              <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
-                             
-                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
                              
                              <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
                              
@@ -1200,10 +1042,22 @@ ${sentencesStr}
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs md:text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs md:text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                  </div>
-                                 
                                  <div className="space-y-4">
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm md:text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs md:text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Related</span><div className="flex flex-wrap gap-2">{relatedWords.length > 0 ? relatedWords.map((w, i) => (<button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left"><div className="flex flex-col"><span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span><span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span></div>{w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}</button>)) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}</div></div>
+                                     <div>
+                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Related</span>
+                                         <div className="flex flex-wrap gap-2">
+                                             {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                                 <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                     <div className="flex flex-col">
+                                                         <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
+                                                         <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span>
+                                                     </div>
+                                                     {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
+                                                 </button>
+                                             )) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}
+                                         </div>
+                                     </div>
                                  </div>
                              </div>
 
@@ -1227,12 +1081,11 @@ ${sentencesStr}
             </div>
           )}
 
-          {/* PLAYGROUND TAB (Compact Mobile Layout) */}
+          {/* PLAYGROUND TAB */}
           {mainTab === 'playground' && (
             <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full">
                 {/* Left: Input & TTS */}
-                {/* Mobile: h-[40%] / Desktop: h-full */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[40%] lg:h-full min-h-0 shrink-0">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[55%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
@@ -1240,10 +1093,8 @@ ${sentencesStr}
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
-                    {/* Compact Input */}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
-                    {/* Controls Row */}
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
@@ -1258,14 +1109,12 @@ ${sentencesStr}
                 </div>
                 
                 {/* Right: AI Chat */}
-                {/* Mobile: flex-1 (fills 60%) / Desktop: h-full */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
                     <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
                         <div className="flex bg-white rounded-lg p-0.5 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={10}/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={10}/> Test</button></div>
                     </div>
                     
-                    {/* Chat Messages */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/30 custom-scrollbar">
                         {playgroundChat.length === 0 && (<div className="text-center py-6 text-slate-400"><Bot size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Start chatting below!</p></div>)}
                         {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
@@ -1273,7 +1122,6 @@ ${sentencesStr}
                         <div ref={playgroundEndRef} />
                     </div>
                     
-                    {/* Chat Input */}
                     <div className="p-2 border-t border-slate-100 bg-white shrink-0"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Message..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={16}/></button></div></div>
                 </div>
             </div>
