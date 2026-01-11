@@ -67,7 +67,7 @@ const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
 const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
-type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id';
+type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id' | 'nl' | 'ru' | 'ar' | 'el' | 'sv' | 'tr';
 
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
   { code: 'en', label: 'EN', voiceCode: 'en-US', flag: '🇬🇧' },
@@ -79,6 +79,12 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
   { code: 'es', label: 'ES', voiceCode: 'es-ES', flag: '🇪🇸' },
   { code: 'it', label: 'IT', voiceCode: 'it-IT', flag: '🇮🇹' },
   { code: 'id', label: 'ID', voiceCode: 'id-ID', flag: '🇮🇩' },
+  { code: 'nl', label: 'NL', voiceCode: 'nl-NL', flag: '🇳🇱' },
+  { code: 'ru', label: 'RU', voiceCode: 'ru-RU', flag: '🇷🇺' },
+  { code: 'ar', label: 'AR', voiceCode: 'ar-XA', flag: '🇸🇦' },
+  { code: 'el', label: 'EL', voiceCode: 'el-GR', flag: '🇬🇷' }, // 新增: 希腊语
+  { code: 'sv', label: 'SV', voiceCode: 'sv-SE', flag: '🇸🇪' }, // 新增: 瑞典语
+  { code: 'tr', label: 'TR', voiceCode: 'tr-TR', flag: '🇹🇷' }, // 新增: 土耳其语
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
@@ -1218,43 +1224,45 @@ ${sentencesStr}
 
           {/* PLAYGROUND TAB */}
           {mainTab === 'playground' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)]">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 h-[calc(100vh-140px)]">
                 {/* Left: Input & TTS */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2>
-                        {/* ✅ Added Auto to Playground */}
-                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 flex flex-col h-full">
+                    <div className="flex justify-between items-center mb-3">
+                        {/* 👇 修改：字号调大，与 Smart Chat 一致 */}
+                        <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Input</h2>
+                        {/* 👇 修改：字号调大 */}
+                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-sm font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-300">
                              <option value="auto">⚡ Auto</option>
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
-                    <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
+                    <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-3" placeholder="Type or paste text here..." />
                     
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
-                        {/* Gender Toggle (With Dialogue Support) */}
-                        <div className="flex bg-white p-1 rounded-lg border border-slate-200">
+                    {/* 👇 修改：F/M 和 播放键放在同一行 */}
+                    <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 flex items-center justify-between gap-2 overflow-x-auto">
+                        <div className="flex bg-white p-1 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
                             <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
-                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dialogue</button>
+                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dia</button>
                         </div>
-                        {/* Actions */}
-                        <div className="flex items-center gap-2">
-                            <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-2 p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50" title="Play Audio">{isProcessingAudio ? <Loader2 size={18} className="animate-spin"/> : <Volume2 size={18}/>}</button>
-                            <button onClick={()=>handlePlaygroundAudio('download')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-2 p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50" title="Download Audio">{isProcessingAudio ? <Loader2 size={18} className="animate-spin"/> : <Download size={18}/>}</button>
+                        <div className="w-px h-4 bg-slate-200 shrink-0"></div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-xs font-bold" title="Play"><Volume2 size={14}/> Play</button>
+                            <button onClick={()=>handlePlaygroundAudio('download')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-xs font-bold" title="Download"><Download size={14}/></button>
                         </div>
                     </div>
                 </div>
+                
                 {/* Right: AI Chat */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={20} className="text-indigo-600"/> Smart Chat</h2><div className="flex bg-white rounded-lg p-1 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={14}/> Learning</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={14}/> Reinforce</button></div></div>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={20} className="text-indigo-600"/> Smart Chat</h2><div className="flex bg-white rounded-lg p-1 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={14}/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={14}/> Test</button></div></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
-                        {playgroundChat.length === 0 && (<div className="text-center py-10 text-slate-400"><Bot size={40} className="mx-auto mb-4 opacity-50"/><p className="text-sm">Type something on the left and start chatting!</p><p className="text-xs mt-2">{playgroundMode==='learning'?"Mode: I'll correct your grammar and chat naturally.":"Mode: I'll challenge you to use your saved vocabulary."}</p></div>)}
+                        {playgroundChat.length === 0 && (<div className="text-center py-10 text-slate-400"><Bot size={40} className="mx-auto mb-4 opacity-50"/><p className="text-sm">Type left & chat right!</p></div>)}
                         {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
                         {isPlaygroundChatting && (<div className="flex justify-start"><div className="bg-white px-4 py-3 rounded-2xl rounded-bl-none border border-slate-100 shadow-sm"><Loader2 size={16} className="animate-spin text-indigo-500"/></div></div>)}
                         <div ref={playgroundEndRef} />
                     </div>
-                    <div className="p-4 border-t border-slate-100 bg-white"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400" placeholder={playgroundMode==='learning' ? "Say something..." : "Try to use your vocab words..."} /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={20}/></button></div></div>
+                    <div className="p-3 md:p-4 border-t border-slate-100 bg-white"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Chat with AI..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={18}/></button></div></div>
                 </div>
             </div>
           )}
@@ -1262,57 +1270,79 @@ ${sentencesStr}
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
-                <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap gap-3 justify-between items-center bg-slate-50/50 rounded-t-2xl">
-                    <div className="flex items-center gap-2 md:gap-3"><div className="bg-indigo-100 p-1.5 md:p-2 rounded-lg text-indigo-600"><Library size={18} className="md:w-5 md:h-5"/></div><div><h2 className="text-base md:text-lg font-bold text-slate-900">Your Collection</h2><p className="text-[10px] md:text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
-                    <div className="flex gap-2">
-                        {/* 👇 修改：文案改为 Import，字号缩小适配手机 */}
-                        <label className="cursor-pointer px-2 py-1.5 md:px-3 md:py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-emerald-50 transition-all">
+                {/* Header: Mobile Optimized */}
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-indigo-100 p-1.5 rounded-lg text-indigo-600"><Library size={18}/></div>
+                        <div>
+                            <h2 className="text-base font-bold text-slate-900 leading-tight">Collection</h2>
+                            <p className="text-[10px] text-slate-500">{savedItems.filter(i=>!i.isArchived).length} active</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {/* Import: Desktop Only */}
+                        <label className="hidden md:flex cursor-pointer px-3 py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-xs items-center gap-2 hover:bg-emerald-50 transition-all">
                             <Upload size={14}/> Import
                             <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
                         </label>
                         
-                        {/* 👇 修改：文案改为 Cluster，字号缩小 */}
-                        <button onClick={handleAutoCluster} disabled={isClustering} className="px-2 py-1.5 md:px-3 md:py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Cluster</button>
+                        {/* Cluster: Desktop Text, Mobile Icon */}
+                        <button onClick={handleAutoCluster} disabled={isClustering} className="p-2 md:px-3 md:py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">
+                            {isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} 
+                            <span className="hidden md:inline">Cluster</span>
+                        </button>
                         
-                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
+                        {/* AI Story: Always Visible, Right Aligned */}
+                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all">
+                            <Sparkles size={14}/> <span className="md:inline">AI Story</span>
+                        </button>
                     </div>
                 </div>
                 
-                {/* 👇 修改：Filters 去掉 "All"，调整间距保证两行显示 */}
-                <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-2 items-center">
-                      <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
-                      
-                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[90px] md:max-w-none truncate" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">Language</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select>
-                      
-                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">Level</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
-                      
-                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
-                      
-                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">Theme</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
-                      
-                      <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset Filters"><RotateCcw size={14}/></button>
-                      
-                      <div className="hidden md:block w-px h-6 bg-slate-200 mx-1"></div>
-                      
-                      <div className="ml-auto flex items-center gap-2">
-                          <div className="hidden md:flex items-center gap-1 text-xs font-bold text-slate-400 uppercase"><ArrowUpDown size={12}/> Sort:</div>
-                          <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}><option value="recent">Recent</option><option value="review_soon">Review</option><option value="level_asc">Level</option></select>
-                          <button onClick={()=>setShowArchived(!showArchived)} className={`text-[10px] md:text-xs font-bold px-2 py-1.5 md:px-3 md:py-2 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>{showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? 'Active' : 'Archived'}</button>
-                      </div>
+                {/* Filters: Mobile Compact & Two Lines */}
+                <div className="px-4 py-2 border-b border-slate-100 bg-white">
+                    {/* Row 1: Selectors */}
+                    <div className="flex flex-wrap gap-2 items-center mb-2">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase"><Filter size={10}/></div>
+                        
+                        {/* Compact Selects */}
+                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">Lan</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.label}</option>)}</select>
+                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">Lvl</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
+                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
+                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">Thm</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
+                        
+                        <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 ml-auto md:ml-0" title="Reset"><RotateCcw size={12}/></button>
+                    </div>
+
+                    {/* Row 2: Sort (Mobile) */}
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-50 md:border-0 md:pt-0">
+                         <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase"><ArrowUpDown size={10}/> Sort:</div>
+                         <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none flex-1 md:flex-none" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}><option value="recent">Recent</option><option value="review_soon">Review</option><option value="level_asc">Level</option></select>
+                         <button onClick={()=>setShowArchived(!showArchived)} className={`text-[10px] font-bold px-2 py-1.5 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200' : 'bg-indigo-600 text-white border-indigo-600'}`}>{showArchived ? <Library size={10}/> : <Archive size={10}/>} {showArchived ? 'Active' : 'Archived'}</button>
+                    </div>
                 </div>
-                {/* ... 列表部分保持不变 ... */}
-                <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+                {/* List: Compact Cards */}
+                <div className="flex-1 overflow-y-auto p-3 md:p-5 bg-slate-50/30">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
-                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer">
-                                    <div className="absolute top-4 right-4 text-xl opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">{getFlag(item.entry.lang)}</div>
-                                    <h3 className="font-serif font-bold text-xl text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
-                                    <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10 leading-relaxed">{item.entry.meaning}</p>
-                                    <div className="flex flex-wrap gap-2 mt-auto"><span className="text-[10px] px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600 uppercase tracking-wide">{formatPOS(item.entry.pos)}</span><span className="text-[10px] px-2 py-1 bg-amber-50 text-amber-700 rounded-md font-bold">{item.entry.level}</span><span className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded-md truncate max-w-[100px]">{item.entry.theme}</span></div>
-                                    <button onClick={(e)=>{e.stopPropagation(); toggleArchive(item.id, item.isArchived)}} className="absolute bottom-4 right-14 p-2 z-50 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors opacity-100" title={item.isArchived ? "Unarchive" : "Archive"}><Archive size={18}/></button>
-                                    <button onClick={(e)=>deleteItem(e, item.id)} className="absolute bottom-4 right-4 p-2 z-50 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors opacity-100"><Trash2 size={18}/></button>
+                                <div key={item.id} onClick={()=>{setEntry(item.entry); setGeneratedImage(null); setChatMessages([]); setMainTab('dictionary')}} className="group relative bg-white border border-slate-200 p-3 md:p-5 rounded-xl hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <h3 className="font-serif font-bold text-lg text-slate-900 group-hover:text-indigo-700 transition-colors">{item.entry.word}</h3>
+                                        <span className="text-lg opacity-40">{getFlag(item.entry.lang)}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 line-clamp-2 mb-3 h-8 leading-relaxed">{item.entry.meaning}</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-auto">
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-bold uppercase tracking-wide">{formatPOS(item.entry.pos)}</span>
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-bold">{item.entry.level}</span>
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded truncate max-w-[80px]">{item.entry.theme}</span>
+                                    </div>
+                                    <div className="hidden group-hover:block absolute bottom-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg shadow-sm">
+                                         <button onClick={(e)=>{e.stopPropagation(); toggleArchive(item.id, item.isArchived)}} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full"><Archive size={14}/></button>
+                                         <button onClick={(e)=>deleteItem(e, item.id)} className="p-1.5 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-full"><Trash2 size={14}/></button>
+                                    </div>
                                 </div>
-                        )) : (<div className="col-span-full py-20 text-center text-slate-400">No words match current filters.</div>)}
+                        )) : (<div className="col-span-full py-20 text-center text-slate-400 text-sm">No words match filters.</div>)}
                     </div>
                 </div>
             </div>
