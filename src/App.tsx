@@ -503,57 +503,66 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio (Multi-speaker / Pro Model)
+// ✅ Playground Audio (带自动降级：Pro -> Flash)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
-      try {
-          const isDialogue = ttsGender === 'dialogue';
-          let speechConfig: any = {};
-
-          if (isDialogue) {
-              // 1. Identify speakers
-              const lines = playgroundInput.split('\n');
-              const speakerMap = new Map<string, string>(); // Name -> VoiceName
-              const distinctSpeakers: string[] = [];
-              
-              lines.forEach(line => {
-                  const match = line.match(/^([^:：]+)[:：]/);
-                  if (match) {
-                      const name = match[1].trim();
-                      if (!speakerMap.has(name) && distinctSpeakers.length < 5) {
-                          const voiceName = AVAILABLE_VOICES[distinctSpeakers.length];
-                          speakerMap.set(name, voiceName);
-                          distinctSpeakers.push(name);
-                      }
-                  }
-              });
-
-              if (distinctSpeakers.length > 0) {
-                  // Construct Multi-speaker Config
-                  const speakerVoiceConfigs = distinctSpeakers.map(name => ({
-                      speaker: name,
-                      voiceConfig: { 
-                          prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } 
-                      }
-                  }));
-
-                  speechConfig = {
-                      multiSpeakerVoiceConfig: {
-                          speakerVoiceConfigs: speakerVoiceConfigs
-                      }
-                  };
-              } else {
-                  // Fallback if no speaker tags found in dialogue mode
-                  speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
-              }
-          } else {
-              // Standard Single Speaker
-              speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsGender === 'female' ? "Kore" : "Fenrir" } } };
-          }
+      const isDialogue = ttsGender === 'dialogue';
+      
+      // 1. 准备 Pro 模型需要的 Multi-speaker 配置
+      let proSpeechConfig: any = {};
+      
+      if (isDialogue) {
+          const lines = playgroundInput.split('\n');
+          const speakerMap = new Map<string, string>();
+          const distinctSpeakers: string[] = [];
           
-          // Use GEMINI_PRO_TTS_MODEL for Playground
+          lines.forEach(line => {
+              const match = line.match(/^([^:：]+)[:：]/);
+              if (match) {
+                  const name = match[1].trim();
+                  if (!speakerMap.has(name) && distinctSpeakers.length < 5) {
+                      const voiceName = AVAILABLE_VOICES[distinctSpeakers.length];
+                      speakerMap.set(name, voiceName);
+                      distinctSpeakers.push(name);
+                  }
+              }
+          });
+
+          if (distinctSpeakers.length > 0) {
+              proSpeechConfig = {
+                  multiSpeakerVoiceConfig: {
+                      speakerVoiceConfigs: distinctSpeakers.map(name => ({
+                          speaker: name,
+                          voiceConfig: { prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } }
+                      }))
+                  }
+              };
+          } else {
+              proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
+          }
+      } else {
+          proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsGender === 'female' ? "Kore" : "Fenrir" } } };
+      }
+
+      // 封装处理音频数据的辅助函数
+      const processAudioData = (base64Audio: string) => {
+          const wavUrl = pcmToWav(base64Audio);
+          if (action === 'play') {
+              new Audio(wavUrl).play();
+          } else {
+              const link = document.createElement('a');
+              link.href = wavUrl;
+              link.download = `polyglot_tts_${playgroundLang}_${Date.now()}.wav`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+          }
+      };
+
+      try {
+          // 尝试 1: 使用 Pro 模型 (支持多说话人)
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
             {
@@ -563,34 +572,56 @@ ${sentencesStr}
                     contents: [{ parts: [{ text: isDialogue ? `TTS the following conversation, ignoring the speaker name in audio:\n${playgroundInput}` : playgroundInput }] }], 
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speechConfig: speechConfig
+                        speechConfig: proSpeechConfig
                     }
                 }),
             }
           );
 
-          if (!response.ok) throw new Error("TTS Generation failed");
-          
+          if (!response.ok) throw new Error(`Pro TTS failed: ${response.status}`);
           const data = await response.json();
           const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          
           if (base64Audio) {
-              const wavUrl = pcmToWav(base64Audio);
-              
-              if (action === 'play') {
-                  new Audio(wavUrl).play();
-              } else {
-                  const link = document.createElement('a');
-                  link.href = wavUrl;
-                  link.download = `polyglot_pro_${playgroundLang}_${Date.now()}.wav`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-              }
+              processAudioData(base64Audio);
+              return; // 成功则退出
           }
+          throw new Error("No audio data in Pro response");
+
       } catch (e) {
-          console.error(e);
-          alert("Audio action failed. Please check network/quota or model availability.");
+          console.warn("Pro TTS Model failed, falling back to Flash...", e);
+
+          try {
+              // 尝试 2: 降级到 Flash 模型 (仅支持单人 voiceConfig)
+              // 强制使用单人配置，忽略之前的 multiSpeaker 配置
+              const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
+
+              const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: playgroundInput }] }], // Flash可能对prompt指令理解较弱，直接传原文
+                        generationConfig: { 
+                            responseModalities: ["AUDIO"], 
+                            speechConfig: fallbackConfig
+                        }
+                    }),
+                }
+              );
+
+              if (!response.ok) throw new Error(`Flash TTS failed: ${response.status}`);
+              const data = await response.json();
+              const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              if (base64Audio) {
+                  processAudioData(base64Audio);
+              } else {
+                  alert("Audio generation failed on both models.");
+              }
+          } catch (e2) {
+              console.error(e2);
+              alert("TTS Service currently unavailable. Please check your API Key or Quota.");
+          }
       } finally {
           setIsProcessingAudio(false);
       }
@@ -981,11 +1012,6 @@ ${sentencesStr}
             <p className="text-xs text-slate-400 font-medium mt-1 ml-10">Advanced Vocabulary Builder (B2-C2)</p>
           </div>
           <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
-               <label className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-colors text-xs font-bold">
-                <span>📂 Import JSON</span>
-                <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
-              </label>
-              <div className="w-px h-4 bg-slate-200 mx-1"></div>
               <div className="hidden md:flex gap-1">
                 {['dictionary', 'playground', 'library', 'review'].map(tab => (
                 <button key={tab} onClick={() => setMainTab(tab as any)} className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all capitalize ${mainTab === tab ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -1219,8 +1245,11 @@ ${sentencesStr}
                 <div className="p-5 border-b border-slate-200 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-3"><div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Library size={20}/></div><div><h2 className="text-lg font-bold text-slate-900">Your Collection</h2><p className="text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
                     <div className="flex gap-2">
-                        {/* ✅ Export JSON kept here */}
-                        <button onClick={() => alert(JSON.stringify(savedItems, null, 2))} className="px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-slate-50 transition-all"><Code size={14}/> Export JSON</button>
+                        {/* Import JSON 按钮 */}
+                        <label className="cursor-pointer px-3 py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-emerald-50 transition-all">
+                            <Upload size={14}/> Import JSON
+                            <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
+                        </label>
                         <button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button>
                         <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
                     </div>
