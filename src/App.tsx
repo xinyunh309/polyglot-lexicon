@@ -1313,7 +1313,7 @@ ${sentencesStr}
                 
                 {/* Left: Input & TTS (Mobile: Top 50% height / Desktop: Full Height) */}
                 {/* 👇 修改 1: h-[42%] 改为 h-[50%]，拉长 Input 区域 */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[50%] lg:h-full min-h-0 shrink-0">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
