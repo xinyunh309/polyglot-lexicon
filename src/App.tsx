@@ -509,7 +509,7 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-// ✅ Playground Audio (优化多说话人逻辑 & Debug)
+// ✅ Playground Audio (智能性别分配 + 鲁棒性增强)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
@@ -517,30 +517,56 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
+      // 简单的性别推断逻辑
+      const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
+          const lower = name.toLowerCase();
+          const MALE_VOICES = ['Fenrir', 'Puck', 'Charon'];
+          const FEMALE_VOICES = ['Kore', 'Aoede'];
+          
+          let isFemale = false;
+          // 规则1: 以 'a' 结尾通常是女性 (Maria, Laura)，除了特定例外 (Luca, Andrea 这种复杂的暂不处理，Mario 已被下面的规则涵盖)
+          if (lower.endsWith('a')) isFemale = true;
+          // 规则2: 常见例外覆盖
+          if (['mario', 'pietro', 'paolo', 'luca', 'andrea', 'nicola'].some(n => lower.includes(n))) isFemale = false;
+          if (['laura', 'maria', 'anna', 'paola', 'elena'].some(n => lower.includes(n))) isFemale = true;
+
+          const pool = isFemale ? FEMALE_VOICES : MALE_VOICES;
+          
+          // 尝试从对应性别的池子中选一个还没用过的声音
+          for (const voice of pool) {
+              if (!assignedVoices.has(voice)) return voice;
+          }
+          // 如果池子空了，随机选一个
+          return pool[Math.floor(Math.random() * pool.length)];
+      };
+
       let proSpeechConfig: any = {};
       
-      // --- 构建配置 ---
       if (isDialogue) {
           const lines = playgroundInput.split('\n');
           const speakerMap = new Map<string, string>();
           const distinctSpeakers: string[] = [];
+          const usedVoices = new Set<string>();
           
           lines.forEach(line => {
-              // 匹配 "Name: Content" 或 "Name：Content"
+              // 匹配 Name: 或 Name： (兼容中英文冒号)
               const match = line.match(/^([^:：]+)[:：]/);
               if (match) {
-                  const name = match[1].trim();
-                  // 限制最多 5 个说话人
-                  if (!speakerMap.has(name) && distinctSpeakers.length < 5) {
-                      const voiceName = AVAILABLE_VOICES[distinctSpeakers.length];
-                      speakerMap.set(name, voiceName);
-                      distinctSpeakers.push(name);
+                  const name = match[1].trim(); // 关键：去除空格，确保匹配准确
+                  if (!speakerMap.has(name)) {
+                      // 限制最多 5 人，防止 400 Bad Request
+                      if (distinctSpeakers.length < 5) {
+                          const voiceName = getVoiceForName(name, usedVoices);
+                          speakerMap.set(name, voiceName);
+                          usedVoices.add(voiceName);
+                          distinctSpeakers.push(name);
+                      }
                   }
               }
           });
 
           if (distinctSpeakers.length > 0) {
-              console.log("🎙️ Detected Speakers:", distinctSpeakers); // Debug
+              console.log("🎙️ Speakers & Voices:", Object.fromEntries(speakerMap));
               proSpeechConfig = {
                   multiSpeakerVoiceConfig: {
                       speakerVoiceConfigs: distinctSpeakers.map(name => ({
@@ -550,7 +576,7 @@ ${sentencesStr}
                   }
               };
           } else {
-              console.warn("⚠️ Dialogue mode selected but no 'Name:' format found. Falling back to single voice.");
+              // 未检测到对话格式，回退到单人
               proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
           }
       } else {
@@ -564,7 +590,7 @@ ${sentencesStr}
           } else {
               const link = document.createElement('a');
               link.href = wavUrl;
-              link.download = `polyglot_tts_${playgroundLang}_${Date.now()}.wav`;
+              link.download = `polyglot_tts_${Date.now()}.wav`;
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
@@ -572,15 +598,12 @@ ${sentencesStr}
       };
 
       try {
-          console.log("🚀 Requesting Pro TTS Config:", proSpeechConfig); // Debug
-          
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    // 关键修改：对话模式下直接传原文，不要加额外指令，以免干扰 Speaker 匹配
                     contents: [{ parts: [{ text: playgroundInput }] }], 
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
@@ -590,7 +613,12 @@ ${sentencesStr}
             }
           );
 
-          if (!response.ok) throw new Error(`Pro TTS failed: ${response.status}`);
+          if (!response.ok) {
+              const errText = await response.text();
+              console.error("Pro TTS Error Detail:", errText); // 打印详细错误信息以便调试
+              throw new Error(`Pro TTS failed: ${response.status}`);
+          }
+          
           const data = await response.json();
           const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
           if (base64Audio) {
@@ -600,10 +628,11 @@ ${sentencesStr}
           throw new Error("No audio data in Pro response");
 
       } catch (e) {
-          console.warn("Pro TTS Model failed, falling back to Flash...", e);
-          // Fallback Logic
+          console.warn("Falling back to Flash TTS...", e);
           try {
+              // 降级：强制使用单人男/女声（避免 Multi-speaker 配置导致 Flash 报错）
               const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
+              
               const response = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
                 {
@@ -1207,7 +1236,7 @@ ${sentencesStr}
                              )}
 
                              <div className="flex flex-col gap-3">
-                                 {/* 1. Word Title */}
+                                 {/* 1. Word Title Row */}
                                  <div className="min-w-0">
                                      {entry.morphology && (
                                          <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold">
@@ -1217,7 +1246,7 @@ ${sentencesStr}
                                      <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
                                  </div>
 
-                                 {/* 2. Tags Row (moved UP) + Verb Table Icon Only */}
+                                 {/* 2. Tags Row (Tags + Verb Table Icon) */}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
@@ -1225,7 +1254,6 @@ ${sentencesStr}
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
                                      
-                                     {/* Verb Table: Icon Only */}
                                      {entry.conjugations && entry.conjugations.length > 0 && (
                                          <button onClick={()=>setShowConjugationModal(true)} className="p-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md shrink-0 hover:bg-indigo-100 transition-colors" title="Verb Conjugations">
                                              <Grid3X3 size={14}/>
@@ -1233,37 +1261,38 @@ ${sentencesStr}
                                      )}
                                  </div>
 
-                                 {/* 3. Meta Row (Moved DOWN): Flag, IPA, TTS, Image */}
-                                 <div className="flex flex-wrap items-center gap-3 mt-1">
-                                     <span className="text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
+                                 {/* 3. Combined Meta & Actions Row (Merged for PC) */}
+                                 {/* flex-col on Mobile, flex-row on Desktop (md:flex-row) */}
+                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-1 pt-2 border-t border-slate-100 md:border-0 md:pt-0">
                                      
-                                     {entry.pronunciation && (
-                                        <span className="text-slate-500 font-mono text-xs md:text-sm tracking-wide bg-white px-2 py-0.5 rounded border border-slate-200">{entry.pronunciation}</span>
-                                     )}
-                                     
-                                     <div className="w-px h-4 bg-slate-200"></div>
-                                     
-                                     <div className="flex items-center gap-1">
-                                         <TTSButton text={entry.word} lang={entry.lang} size={18} />
-                                         <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Generate Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
+                                     {/* Left: Meta Info (Flag, Pronunciation, Audio, Image) */}
+                                     <div className="flex items-center gap-3">
+                                         <span className="text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
+                                         {entry.pronunciation && (
+                                            <span className="text-slate-500 font-mono text-xs md:text-sm tracking-wide bg-white px-2 py-0.5 rounded border border-slate-200">{entry.pronunciation}</span>
+                                         )}
+                                         <div className="w-px h-4 bg-slate-200 hidden md:block"></div>
+                                         <div className="flex items-center gap-1">
+                                             <TTSButton text={entry.word} lang={entry.lang} size={18} />
+                                             <button onClick={handleGenerateImage} disabled={isGeneratingImage} className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Generate Image">{isGeneratingImage ? <Loader2 size={18} className="animate-spin"/> : <ImageIcon size={18}/>}</button>
+                                         </div>
                                      </div>
-                                 </div>
 
-                                 {/* 4. Action Buttons (Compact & Small) */}
-                                 <div className="flex items-center gap-2 w-full mt-2 justify-end pt-3 border-t border-slate-200/50">
-                                    {isCurrentSaved && (
-                                        <>
-                                            <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2 rounded-lg border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600 border-slate-200'}`} title="Archive"><Archive size={16}/></button>
-                                            <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2 rounded-lg border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all"><Trash2 size={16}/></button>
-                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
-                                            <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 rounded-lg border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button>
-                                        </>
-                                    )}
-                                    
-                                    {/* Compact Save Button */}
-                                    <button onClick={handleSmartSave} className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs md:text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                        {saveStatus==='saved' ? <CheckCircle size={14}/> : isCurrentSaved ? <><Merge size={14}/> Update</> : <><Save size={14}/> Save</>}
-                                    </button>
+                                     {/* Right: Actions (Save, Archive, Enrich) - Now on same line in PC */}
+                                     <div className="flex items-center gap-2 justify-end">
+                                        {isCurrentSaved && (
+                                            <>
+                                                <button onClick={()=>toggleArchive(isCurrentSaved.id, isCurrentSaved.isArchived)} className={`p-2 rounded-lg border transition-all ${isCurrentSaved.isArchived ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600 border-slate-200'}`} title="Archive"><Archive size={16}/></button>
+                                                <button onClick={(e)=>deleteItem(e, isCurrentSaved.id)} className="p-2 rounded-lg border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all"><Trash2 size={16}/></button>
+                                                <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                                                <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 rounded-lg border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/></button>
+                                            </>
+                                        )}
+                                        {/* Save Button */}
+                                        <button onClick={handleSmartSave} className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs md:text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                            {saveStatus==='saved' ? <CheckCircle size={16}/> : isCurrentSaved ? <><Merge size={16}/> Update</> : <><Save size={16}/> Save</>}
+                                        </button>
+                                     </div>
                                  </div>
                              </div>
                         </div>
