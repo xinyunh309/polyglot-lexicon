@@ -891,8 +891,6 @@ ${sentencesStr}
       const res = await callGemini(`Etymology of "${entry.word}". Output in Chinese.`);
       setIsChatting(false); if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
-
-  const showEntryJson = () => { if (!entry) return; alert(JSON.stringify(entry, null, 2)); };
    
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
