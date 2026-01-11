@@ -1131,11 +1131,12 @@ ${sentencesStr}
         </header>
 
         <main className="flex-1 flex flex-col min-w-0">
+          {/* DICTIONARY TAB (Full Replacement to fix syntax errors) */}
           {mainTab === 'dictionary' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 h-full items-start">
               {/* Left: Input Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
-                {/* ✅ Moved Language Selector Here */}
+                {/* Language Selector */}
                 <div className="flex gap-2 mb-2">
                      <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'}`}>
                         {isAutoLang ? "⚡ Auto-Detect" : "Manual Select"}
@@ -1301,14 +1302,15 @@ ${sentencesStr}
                              </div>
                         </div>
                         <div className="bg-slate-900 px-4 md:px-6 py-2 md:py-3 flex flex-col">
-                            <div className="flex justify-between items-center"><span className="text-[10px] md:text-xs font-mono text-slate-400 truncate max-w-[70%]">Markdown Source</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
+                            <div className="flex justify-between items-center"><span className="text-[10px] md:text-xs font-mono text-slate-400 truncate max-w-[70%]">{generatedEntries.length > 1 ? `Markdown Source (${generatedEntries.length} words)` : "Markdown Source"}</span><div className="flex gap-3"><button onClick={()=>setShowMarkdown(!showMarkdown)} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1">{showMarkdown ? <EyeOff size={10}/> : <Eye size={10}/>} {showMarkdown ? 'Hide' : 'View'}</button><button onClick={copyToClipboard} className="text-[10px] md:text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"><Copy size={10}/> Copy</button></div></div>
                             {showMarkdown && (<pre className="mt-2 text-[10px] md:text-xs text-slate-400 font-mono whitespace-pre-wrap bg-black/20 p-2 rounded border border-white/10">{generatedMarkdown}</pre>)}
                         </div>
                     </div>
                 ) : (
-                    <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 md:w-20 md:h-20 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300 md:w-10 md:h-10"/></div><h3 className="text-lg md:text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word to start.</p></div>
+                    <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><div className="w-16 h-16 md:w-20 md:h-20 bg-white rounded-full shadow-sm flex items-center justify-center mb-6"><BookOpen size={32} className="text-slate-300 md:w-10 md:h-10"/></div><h3 className="text-lg md:text-xl font-bold text-slate-700 mb-2">Ready to Explore</h3><p className="text-sm text-slate-400 max-w-xs">Enter a word in the sidebar to generate a comprehensive B2-C2 level card.</p></div>
                 )}
               </div>
+            </div>
           )}
 
           {/* PLAYGROUND TAB */}
