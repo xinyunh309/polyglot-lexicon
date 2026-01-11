@@ -634,32 +634,64 @@ ${sentencesStr}
   };
 
   // --- Dictionary AI Logic ---
-  const handleGenerate = async (overrideWord?: string) => {
+  // 1. 修改 handleGenerate：增加 overrideLang 参数
+  const handleGenerate = async (overrideWord?: string, overrideLang?: Language) => {
     const target = overrideWord || inputWord || inputText;
     if (!target) return;
+    
+    // 检查缓存
     if (inputMode === 'word') {
         const existingItem = savedItems.find(i => i.entry.word.toLowerCase() === target.toLowerCase());
-        if (existingItem) { setEntry(existingItem.entry); setGeneratedEntries([existingItem.entry]); setGeneratedIndex(0); setMainTab('dictionary'); setInputWord(''); return; }
+        if (existingItem) { 
+            // 如果缓存里的词有语言信息，也同步更新界面语言
+            if (existingItem.entry.lang) setCurrentLang(existingItem.entry.lang);
+            setEntry(existingItem.entry); 
+            setGeneratedEntries([existingItem.entry]); 
+            setGeneratedIndex(0); 
+            setMainTab('dictionary'); 
+            setInputWord(''); 
+            return; 
+        }
     }
+    
     setIsGenerating(true); setMainTab('dictionary');
 
-    const shouldUseAuto = isAutoLang && !overrideWord;
+    // --- 核心修复逻辑 ---
+    let targetLangCode = currentLang;
+    let shouldUseAuto = isAutoLang;
     
-    let targetLangCode = "en";
-    let targetLangLabel = "English";
-
-    if (!shouldUseAuto) {
-        const targetLangObj = LANGUAGES.find(l => l.code === (overrideWord ? entry?.lang || 'en' : currentLang)); 
-        targetLangLabel = targetLangObj?.label || "English";
-        targetLangCode = targetLangObj?.code || "en";
+    if (overrideLang) {
+        // 情况 A: 明确指定了语言 (Cross-ref, Related Words)
+        // 强制切换到该语言，并关闭自动检测
+        targetLangCode = overrideLang;
+        setCurrentLang(overrideLang); // 同步更新 UI 下拉框
+        shouldUseAuto = false; 
+    } else if (overrideWord) {
+        // 情况 B: 跳转但未指定语言 (通常是同义词/反义词)
+        // 默认沿用当前词条的语言 (因为同义词通常是同语言)
+        if (entry?.lang) {
+            targetLangCode = entry.lang;
+            setCurrentLang(entry.lang);
+            shouldUseAuto = false;
+        } else {
+            shouldUseAuto = true; //以此保底
+        }
+    } else {
+        // 情况 C: 用户手动输入
+        // 维持原逻辑：看 isAutoLang 状态
+        shouldUseAuto = isAutoLang;
     }
+
+    const targetLangObj = LANGUAGES.find(l => l.code === targetLangCode); 
+    const targetLangLabel = targetLangObj?.label || "English";
+    const targetLangCodeStr = targetLangObj?.code || "en";
 
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
      
     ${shouldUseAuto 
       ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
-      : `Target Language: ${targetLangLabel} (${targetLangCode}).`}
+      : `Target Language: ${targetLangLabel} (${targetLangCodeStr}).`}
      
     User Language: Chinese (Simplified).
 
@@ -687,7 +719,7 @@ ${sentencesStr}
     JSON SCHEMA:
     {
       "word": "Lemma of ${target}",
-      "lang": "${shouldUseAuto ? "detected_code" : targetLangCode}",
+      "lang": "${shouldUseAuto ? "detected_code" : targetLangCodeStr}",
       "pos": "string (CN)",
       "meaning": "string (CN)",
       "level": "string",
@@ -741,10 +773,11 @@ ${sentencesStr}
     }
   };
 
-  const handleJump = (word: string) => {
+  // 2. 修改 handleJump：增加 lang 参数并传给 handleGenerate
+  const handleJump = (word: string, lang?: string) => {
       if (entry) setHistory(prev => [...prev, entry]);
       setGeneratedImage(null); 
-      handleGenerate(word);
+      handleGenerate(word, lang as Language);
   };
 
   const handleBack = () => {
@@ -782,19 +815,67 @@ ${sentencesStr}
 
   const handleAutoCluster = async () => {
       setIsClustering(true);
-      const themes = [...new Set(savedItems.map(i => i.entry.theme))];
-      const result = await callGemini(`Group themes into 6-8 CN categories. JSON { "old": "new" }. Themes: ${JSON.stringify(themes)}`, true);
-      setIsClustering(false);
-      if (result) {
-          try {
-              const map = JSON.parse(result);
+      try {
+          // 1. 收集现有的杂乱数据
+          const themes = [...new Set(savedItems.map(i => i.entry.theme))];
+          const posList = [...new Set(savedItems.map(i => i.entry.pos))];
+          
+          // 2. 构建清洗指令
+          const prompt = `
+          Role: Data Cleaner for Vocabulary App.
+          Task 1 (POS): Standardize these Part-of-Speech tags to Standard Chinese (e.g., noun->名词, v.->动词, adj->形容词). 
+          Input POS: ${JSON.stringify(posList)}
+          
+          Task 2 (Themes): Group these themes into 8-10 broad Chinese categories (e.g., 商业, 科技, 生活, 情感, 自然).
+          Input Themes: ${JSON.stringify(themes)}
+          
+          Output JSON strictly: { "posMap": {"old_pos": "new_cn_pos"}, "themeMap": {"old_theme": "new_cn_theme"} }
+          `;
+
+          const result = await callGemini(prompt, true);
+          
+          if (result) {
+              const data = JSON.parse(result);
+              const posMap = data.posMap || {};
+              const themeMap = data.themeMap || {};
+              
               const batch = writeBatch(db);
+              let updateCount = 0;
+
               savedItems.forEach(item => {
-                  if (map[item.entry.theme]) batch.update(doc(db, 'vocabulary', item.id), { 'entry.theme': map[item.entry.theme] });
+                  let needsUpdate = false;
+                  const updates: any = {};
+                  
+                  // Check POS
+                  if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) {
+                      updates['entry.pos'] = posMap[item.entry.pos];
+                      needsUpdate = true;
+                  }
+                  
+                  // Check Theme
+                  if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) {
+                      updates['entry.theme'] = themeMap[item.entry.theme];
+                      needsUpdate = true;
+                  }
+
+                  if (needsUpdate) {
+                      batch.update(doc(db, 'vocabulary', item.id), updates);
+                      updateCount++;
+                  }
               });
-              await batch.commit();
-              alert("Themes Organized!");
-          } catch (e) { console.error(e); }
+
+              if (updateCount > 0) {
+                  await batch.commit();
+                  alert(`✅ Cleaned up ${updateCount} items! (POS & Themes standardized)`);
+              } else {
+                  alert("Data is already clean!");
+              }
+          }
+      } catch (e) { 
+          console.error(e); 
+          alert("Cluster failed. Check console.");
+      } finally {
+          setIsClustering(false);
       }
   };
 
@@ -1182,16 +1263,22 @@ ${sentencesStr}
                              <div className="space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-xs font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-2 pl-1">{s.translation}</div></div>))}</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-slate-100">
                                  <div className="space-y-6">
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
-                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
+                                     {/* Synonyms: 传 entry.lang (同义词通常同语言) */}
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
+                                     
+                                     {/* Antonyms: 传 entry.lang (反义词通常同语言) */}
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                  </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                 
+                                 {/* Cross-Language: 传 ref.lang (核心修复点！) */}
+                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                                  
                                  <div className="md:col-span-2">
                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                     <div className="flex flex-wrap gap-2">
                                         {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                            /* Related Words: 传 w.lang */
+                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
                                                 <div className="flex flex-col">
                                                     <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
                                                     <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
@@ -1299,26 +1386,63 @@ ${sentencesStr}
                     </div>
                 </div>
                 
-                {/* Filters: Mobile Compact & Two Lines */}
-                <div className="px-4 py-2 border-b border-slate-100 bg-white">
-                    {/* Row 1: Selectors */}
-                    <div className="flex flex-wrap gap-2 items-center mb-2">
-                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase"><Filter size={10}/></div>
+                {/* Filters: Responsive Design */}
+                <div className="px-4 py-3 border-b border-slate-100 bg-white">
+                    <div className="flex flex-wrap md:flex-nowrap items-center gap-2">
+                        {/* Icon */}
+                        <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase mr-1">
+                            <Filter size={12}/> <span className="hidden md:inline">Filter:</span>
+                        </div>
                         
-                        {/* Compact Selects */}
-                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">Lan</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.label}</option>)}</select>
-                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">Lvl</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
-                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
-                        <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">Thm</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
+                        {/* Selectors: Mobile(Abbr) / Desktop(Full) */}
+                        <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[55px] md:w-auto focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}>
+                            <option value="all" className="md:hidden">Lan</option>
+                            <option value="all" className="hidden md:block">Language</option>
+                            {LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.label}</option>)}
+                        </select>
                         
-                        <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 ml-auto md:ml-0" title="Reset"><RotateCcw size={12}/></button>
-                    </div>
+                        <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}>
+                            <option value="all" className="md:hidden">Lvl</option>
+                            <option value="all" className="hidden md:block">Level</option>
+                            {availableLevels.map(l=><option key={l} value={l}>{l}</option>)}
+                        </select>
+                        
+                        <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}>
+                            <option value="all" className="md:hidden">POS</option>
+                            <option value="all" className="hidden md:block">POS</option>
+                            {availablePos.map(p=><option key={p} value={p}>{p}</option>)}
+                        </select>
+                        
+                        <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-[50px] md:w-auto focus:border-indigo-300" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}>
+                            <option value="all" className="md:hidden">Thm</option>
+                            <option value="all" className="hidden md:block">Theme</option>
+                            {availableThemes.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                        
+                        <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset"><RotateCcw size={14}/></button>
 
-                    {/* Row 2: Sort (Mobile) */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-slate-50 md:border-0 md:pt-0">
-                         <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase"><ArrowUpDown size={10}/> Sort:</div>
-                         <select className="text-[10px] font-bold p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none flex-1 md:flex-none" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}><option value="recent">Recent</option><option value="review_soon">Review</option><option value="level_asc">Level</option></select>
-                         <button onClick={()=>setShowArchived(!showArchived)} className={`text-[10px] font-bold px-2 py-1.5 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200' : 'bg-indigo-600 text-white border-indigo-600'}`}>{showArchived ? <Library size={10}/> : <Archive size={10}/>} {showArchived ? 'Active' : 'Archived'}</button>
+                        {/* Divider: Desktop Only */}
+                        <div className="hidden md:block w-px h-6 bg-slate-200 mx-2"></div>
+
+                        {/* Sort & Action: Desktop(Right Aligned), Mobile(New Line) */}
+                        <div className="w-full md:w-auto md:ml-auto flex items-center gap-2 pt-2 md:pt-0 border-t border-slate-50 md:border-0 mt-1 md:mt-0">
+                             <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase">
+                                 <ArrowUpDown size={12}/> <span className="hidden md:inline">Sort:</span>
+                             </div>
+                             
+                             {/* Mobile: Width Auto (fits content), Desktop: Auto */}
+                             <select className="text-[10px] md:text-xs font-bold p-1.5 md:p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none w-auto focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}>
+                                 <option value="recent">Recent</option>
+                                 <option value="review_soon">Review</option>
+                                 <option value="level_asc">Level</option>
+                             </select>
+                             
+                             <button onClick={()=>setShowArchived(!showArchived)} className={`ml-auto md:ml-0 text-[10px] md:text-xs font-bold px-2 py-1.5 md:px-3 md:py-2 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>
+                                 {showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? <span className="hidden md:inline">Back to Active</span> : <span className="hidden md:inline">View Archive</span>}
+                                 {/* Mobile Label Override */}
+                                 <span className="md:hidden">{showArchived ? 'Active' : 'Archived'}</span>
+                             </button>
+                        </div>
                     </div>
                 </div>
 
