@@ -834,12 +834,30 @@ ${sentencesStr}
     setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
-  const handleReviewAction = async (remember: boolean) => {
+  const handleReviewAction = async (action: 'reset' | 'remember' | 'boost') => {
       const item = reviewQueue[0]; if (!item) return; 
       setReviewQueue(prev => prev.slice(1)); setIsReviewFlipped(false);
       try {
-          const nextStage = remember ? Math.min(item.stage + 1, INTERVALS.length - 1) : 0;
-          await updateDoc(doc(db, 'vocabulary', item.id), { nextReviewDate: remember ? Date.now() + INTERVALS[nextStage] * 86400000 : Date.now(), stage: nextStage, lastReviewedDate: Date.now() });
+          let nextStage = item.stage;
+          let nextDate = Date.now();
+
+          if (action === 'reset') {
+              nextStage = 0;
+              // Reset sets date to now (review again immediately or soon)
+          } else if (action === 'remember') {
+              nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
+              nextDate = Date.now() + INTERVALS[nextStage] * 86400000;
+          } else if (action === 'boost') {
+              // Boost: Advance stage but force 14 days interval
+              nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
+              nextDate = Date.now() + 14 * 86400000; 
+          }
+
+          await updateDoc(doc(db, 'vocabulary', item.id), { 
+              nextReviewDate: nextDate, 
+              stage: nextStage, 
+              lastReviewedDate: Date.now() 
+          });
       } catch(e) { console.error(e); }
       if (reviewQueue.length <= 1) setMainTab('library');
   };
@@ -1011,8 +1029,10 @@ ${sentencesStr}
             </h1>
             <p className="text-xs text-slate-400 font-medium mt-1 ml-10">Advanced Vocabulary Builder (B2-C2)</p>
           </div>
-          <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
-              <div className="hidden md:flex gap-1">
+          
+          {/* 👇 修改重点：我在这个 div 上加了 "hidden md:flex"，这样手机上整个白色框都会消失 */}
+          <div className="hidden md:flex items-center gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex gap-1">
                 {['dictionary', 'playground', 'library', 'review'].map(tab => (
                 <button key={tab} onClick={() => setMainTab(tab as any)} className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all capitalize ${mainTab === tab ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                     {tab === 'review' && reviewQueue.length > 0 && <span className="w-2 h-2 bg-rose-500 rounded-full"></span>}{tab}
@@ -1227,7 +1247,7 @@ ${sentencesStr}
                 </div>
                 {/* Right: AI Chat */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={20} className="text-indigo-600"/> Smart Chat</h2><div className="flex bg-white rounded-lg p-1 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={14}/> Learning</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={14}/> Reinforce</button></div></div>
+                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={20} className="text-indigo-600"/> Smart Chat</h2><div className="flex bg-white rounded-lg p-1 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={14}/> Learning</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={14}/> Reinforce</button></div></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
                         {playgroundChat.length === 0 && (<div className="text-center py-10 text-slate-400"><Bot size={40} className="mx-auto mb-4 opacity-50"/><p className="text-sm">Type something on the left and start chatting!</p><p className="text-xs mt-2">{playgroundMode==='learning'?"Mode: I'll correct your grammar and chat naturally.":"Mode: I'll challenge you to use your saved vocabulary."}</p></div>)}
                         {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
@@ -1242,31 +1262,45 @@ ${sentencesStr}
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
-                <div className="p-5 border-b border-slate-200 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50 rounded-t-2xl">
-                    <div className="flex items-center gap-3"><div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Library size={20}/></div><div><h2 className="text-lg font-bold text-slate-900">Your Collection</h2><p className="text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
+                <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap gap-3 justify-between items-center bg-slate-50/50 rounded-t-2xl">
+                    <div className="flex items-center gap-2 md:gap-3"><div className="bg-indigo-100 p-1.5 md:p-2 rounded-lg text-indigo-600"><Library size={18} className="md:w-5 md:h-5"/></div><div><h2 className="text-base md:text-lg font-bold text-slate-900">Your Collection</h2><p className="text-[10px] md:text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
                     <div className="flex gap-2">
-                        {/* Import JSON 按钮 */}
-                        <label className="cursor-pointer px-3 py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-emerald-50 transition-all">
-                            <Upload size={14}/> Import JSON
+                        {/* 👇 修改：文案改为 Import，字号缩小适配手机 */}
+                        <label className="cursor-pointer px-2 py-1.5 md:px-3 md:py-2 bg-white border border-slate-200 text-emerald-600 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-emerald-50 transition-all">
+                            <Upload size={14}/> Import
                             <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
                         </label>
-                        <button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button>
-                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
+                        
+                        {/* 👇 修改：文案改为 Cluster，字号缩小 */}
+                        <button onClick={handleAutoCluster} disabled={isClustering} className="px-2 py-1.5 md:px-3 md:py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Cluster</button>
+                        
+                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
                     </div>
                 </div>
-                {/* Filters */}
-                <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-3 items-center">
-                      <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">All Languages</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">All Levels</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">All POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[100px] truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">All Themes</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
-                      <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset Filters"><RotateCcw size={14}/></button>
-                      <div className="w-px h-6 bg-slate-200 mx-2"></div>
-                      <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase mr-1"><ArrowUpDown size={12}/> Sort:</div>
-                      <select className="text-xs font-medium p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}><option value="recent">Recently Added</option><option value="review_soon">Review Priority</option><option value="level_asc">Level (A-Z)</option></select>
-                      <button onClick={()=>setShowArchived(!showArchived)} className={`ml-auto text-xs font-bold px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>{showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? 'Back to Active' : 'View Archive'}</button>
+                
+                {/* 👇 修改：Filters 去掉 "All"，调整间距保证两行显示 */}
+                <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-2 items-center">
+                      <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-slate-400 uppercase mr-1"><Filter size={12}/> Filter:</div>
+                      
+                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[90px] md:max-w-none truncate" value={filters.lang} onChange={e=>setFilters({...filters, lang: e.target.value})}><option value="all">Language</option>{LANGUAGES.map(l=><option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select>
+                      
+                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.level} onChange={e=>setFilters({...filters, level: e.target.value})}><option value="all">Level</option>{availableLevels.map(l=><option key={l} value={l}>{l}</option>)}</select>
+                      
+                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.pos} onChange={e=>setFilters({...filters, pos: e.target.value})}><option value="all">POS</option>{availablePos.map(p=><option key={p} value={p}>{p}</option>)}</select>
+                      
+                      <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300 max-w-[80px] md:max-w-none truncate" value={filters.theme} onChange={e=>setFilters({...filters, theme: e.target.value})}><option value="all">Theme</option>{availableThemes.map(t=><option key={t} value={t}>{t}</option>)}</select>
+                      
+                      <button onClick={()=>setFilters({lang:'all', level:'all', pos:'all', theme:'all'})} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600" title="Reset Filters"><RotateCcw size={14}/></button>
+                      
+                      <div className="hidden md:block w-px h-6 bg-slate-200 mx-1"></div>
+                      
+                      <div className="ml-auto flex items-center gap-2">
+                          <div className="hidden md:flex items-center gap-1 text-xs font-bold text-slate-400 uppercase"><ArrowUpDown size={12}/> Sort:</div>
+                          <select className="text-[10px] md:text-xs font-medium p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-300" value={sortMode} onChange={e=>setSortMode(e.target.value as any)}><option value="recent">Recent</option><option value="review_soon">Review</option><option value="level_asc">Level</option></select>
+                          <button onClick={()=>setShowArchived(!showArchived)} className={`text-[10px] md:text-xs font-bold px-2 py-1.5 md:px-3 md:py-2 border rounded-lg transition-colors flex items-center gap-1.5 ${showArchived ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' : 'bg-indigo-600 text-white border-indigo-600'}`}>{showArchived ? <Library size={12}/> : <Archive size={12}/>} {showArchived ? 'Active' : 'Archived'}</button>
+                      </div>
                 </div>
+                {/* ... 列表部分保持不变 ... */}
                 <div className="flex-1 overflow-y-auto p-5 bg-slate-50/30">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredItems.length > 0 ? filteredItems.map(item => (
@@ -1295,11 +1329,22 @@ ${sentencesStr}
                     <div className="w-full md:w-[600px] mx-auto min-h-[400px] relative bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden cursor-pointer flex flex-col" onClick={() => setIsReviewFlipped(!isReviewFlipped)}>
                         <div className="h-12 bg-slate-50 border-b border-slate-100 flex items-center justify-end px-6 shrink-0"><span className="text-2xl">{getFlag(reviewQueue[0].entry.lang)}</span></div>
                         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
-                            {!isReviewFlipped ? (
-                                <div className="flex flex-col items-center animate-in fade-in w-full"><h2 className="font-serif font-bold text-slate-900 mb-8 text-center break-words leading-tight w-full px-4" style={{ fontSize: 'clamp(2rem, 8vw, 4rem)' }}>{reviewQueue[0].entry.word}</h2><div onClick={e=>e.stopPropagation()} className="p-4 bg-indigo-50 rounded-full hover:scale-110 transition-transform mb-12"><TTSButton text={reviewQueue[0].entry.word} lang={reviewQueue[0].entry.lang} size={32}/></div><p className="text-sm text-slate-400 font-medium flex items-center gap-2 animate-bounce"><RotateCcw size={14}/> Tap to reveal</p></div>
-                            ) : (
-                                <div className="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 h-full"><h2 className="text-2xl font-bold text-slate-900 mb-2">{reviewQueue[0].entry.word}</h2><div className="w-full bg-indigo-50 p-4 rounded-xl text-indigo-900 font-medium text-lg mb-4 leading-relaxed border border-indigo-100">{reviewQueue[0].entry.meaning}</div><div className="w-full space-y-3 mb-auto text-left">{(reviewQueue[0].entry.sentences || []).slice(0,1).map((s, i) => (<div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-start gap-3"><div className="flex-1"><p className="text-slate-800 font-medium text-sm mb-1">{s.target}</p><p className="text-xs text-slate-500">{s.translation}</p></div><div onClick={e=>e.stopPropagation()}><TTSButton text={s.target} lang={reviewQueue[0].entry.lang} minimal size={16}/></div></div>))}</div><div className="w-full pt-4 mt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><div className="flex items-center gap-1"><Calendar size={10}/> Added: {new Date(reviewQueue[0].addedAt || reviewQueue[0].created_at).toLocaleDateString()}</div><div className="flex items-center gap-1">Stage: {reviewQueue[0].stage}</div></div></div>
-                            )}
+                        {isReviewFlipped && (
+                            <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-3 gap-3 shrink-0">
+                                <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('reset');}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
+                                    <X size={16}/> <span>Forgot</span>
+                                </button>
+                                
+                                {/* 新增的按钮 */}
+                                <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('boost');}} className="py-3 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
+                                    <Clock size={16}/> <span>+14 Days</span>
+                                </button>
+
+                                <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('remember');}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
+                                    <Check size={16}/> <span>{getNextIntervalLabel(reviewQueue[0].stage)}</span>
+                                </button>
+                            </div>
+                        )}
                         </div>
                         {isReviewFlipped && (<div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0"><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(false);}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex items-center justify-center gap-2 text-sm"><X size={16}/> Forgot (Reset)</button><button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction(true);}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm"><Check size={16}/> Remember ({getNextIntervalLabel(reviewQueue[0].stage)})</button></div>)}
                     </div>
