@@ -506,7 +506,7 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-// ✅ Playground Audio (智能性别分配 + 鲁棒性增强)
+// ✅ Playground Audio (修复：Flash 降级也支持 Multi-speaker)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
@@ -514,31 +514,33 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
-      // 简单的性别推断逻辑
+      // 🔊 增强的性别推断逻辑
       const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
-          const lower = name.toLowerCase();
+          const lower = name.toLowerCase().trim();
           const MALE_VOICES = ['Fenrir', 'Puck', 'Charon'];
           const FEMALE_VOICES = ['Kore', 'Aoede'];
           
-          let isFemale = false;
-          // 规则1: 以 'a' 结尾通常是女性 (Maria, Laura)，除了特定例外 (Luca, Andrea 这种复杂的暂不处理，Mario 已被下面的规则涵盖)
-          if (lower.endsWith('a')) isFemale = true;
-          // 规则2: 常见例外覆盖
-          if (['mario', 'pietro', 'paolo', 'luca', 'andrea', 'nicola'].some(n => lower.includes(n))) isFemale = false;
-          if (['laura', 'maria', 'anna', 'paola', 'elena'].some(n => lower.includes(n))) isFemale = true;
+          let isFemale = false; 
+          
+          if (['a', 'e', 'y'].some(suffix => lower.endsWith(suffix))) isFemale = true;
+          
+          const maleExceptions = ['luca', 'andrea', 'nicola', 'mario', 'paolo', 'pietro', 'luigi', 'tom'];
+          const femaleExceptions = ['sarah', 'emily', 'alice'];
+          
+          if (maleExceptions.some(n => lower.includes(n))) isFemale = false;
+          if (femaleExceptions.some(n => lower.includes(n))) isFemale = true;
 
           const pool = isFemale ? FEMALE_VOICES : MALE_VOICES;
           
-          // 尝试从对应性别的池子中选一个还没用过的声音
           for (const voice of pool) {
               if (!assignedVoices.has(voice)) return voice;
           }
-          // 如果池子空了，随机选一个
           return pool[Math.floor(Math.random() * pool.length)];
       };
 
-      let proSpeechConfig: any = {};
+      let speechConfig: any = {}; // 通用配置对象 (Pro 和 Flash 共用)
       
+      // --- 1. 分析对话结构 ---
       if (isDialogue) {
           const lines = playgroundInput.split('\n');
           const speakerMap = new Map<string, string>();
@@ -546,38 +548,41 @@ ${sentencesStr}
           const usedVoices = new Set<string>();
           
           lines.forEach(line => {
-              // 匹配 Name: 或 Name： (兼容中英文冒号)
               const match = line.match(/^([^:：]+)[:：]/);
               if (match) {
-                  const name = match[1].trim(); // 关键：去除空格，确保匹配准确
+                  const name = match[1].trim(); 
                   if (!speakerMap.has(name)) {
-                      // 限制最多 5 人，防止 400 Bad Request
-                      if (distinctSpeakers.length < 5) {
-                          const voiceName = getVoiceForName(name, usedVoices);
-                          speakerMap.set(name, voiceName);
-                          usedVoices.add(voiceName);
-                          distinctSpeakers.push(name);
-                      }
+                      const voiceName = getVoiceForName(name, usedVoices);
+                      speakerMap.set(name, voiceName);
+                      usedVoices.add(voiceName);
+                      distinctSpeakers.push(name);
                   }
               }
           });
 
-          if (distinctSpeakers.length > 0) {
-              console.log("🎙️ Speakers & Voices:", Object.fromEntries(speakerMap));
-              proSpeechConfig = {
+          // --- 2. 针对 API "必须等于 2" 的严格限制做处理 ---
+          if (distinctSpeakers.length >= 2) {
+              // ⚠️ 即使 Flash 支持多人，API 接口目前似乎仍限制必须配置 2 个 VoiceConfig
+              const activeSpeakers = distinctSpeakers.slice(0, 2);
+              
+              console.log("🎙️ Active Speakers (Limited to 2):", activeSpeakers);
+              
+              speechConfig = {
                   multiSpeakerVoiceConfig: {
-                      speakerVoiceConfigs: distinctSpeakers.map(name => ({
+                      speakerVoiceConfigs: activeSpeakers.map(name => ({
                           speaker: name,
                           voiceConfig: { prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } }
                       }))
                   }
               };
           } else {
-              // 未检测到对话格式，回退到单人
-              proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
+              console.warn("⚠️ Dialogue detected < 2 speakers. Switching to Single Voice.");
+              const fallbackVoice = distinctSpeakers.length === 1 ? speakerMap.get(distinctSpeakers[0])! : "Kore";
+              speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: fallbackVoice } } };
           }
       } else {
-          proSpeechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
+          // 非对话模式，直接单人
+          speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
       }
 
       const processAudioData = (base64Audio: string) => {
@@ -595,6 +600,8 @@ ${sentencesStr}
       };
 
       try {
+          console.log("🚀 Requesting Pro TTS...");
+          
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
             {
@@ -604,17 +611,13 @@ ${sentencesStr}
                     contents: [{ parts: [{ text: playgroundInput }] }], 
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speechConfig: proSpeechConfig
+                        speechConfig: speechConfig // ✅ Pro 使用多说话人配置
                     }
                 }),
             }
           );
 
-          if (!response.ok) {
-              const errText = await response.text();
-              console.error("Pro TTS Error Detail:", errText); // 打印详细错误信息以便调试
-              throw new Error(`Pro TTS failed: ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`Pro TTS failed: ${response.status}`);
           
           const data = await response.json();
           const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -627,16 +630,18 @@ ${sentencesStr}
       } catch (e) {
           console.warn("Falling back to Flash TTS...", e);
           try {
-              // 降级：强制使用单人男/女声（避免 Multi-speaker 配置导致 Flash 报错）
-              const fallbackConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
-              
+              // ✅ 核心修复：Flash 现在也直接使用 speechConfig (包含多说话人配置)
+              // 不再降级为单人！
               const response = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
                 {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: playgroundInput }] }], 
-                        generationConfig: { responseModalities: ["AUDIO"], speechConfig: fallbackConfig }
+                        generationConfig: { 
+                            responseModalities: ["AUDIO"], 
+                            speechConfig: speechConfig // 👈 这里原来是 fallbackConfig，现在改成了 speechConfig
+                        }
                     }),
                 }
               );
@@ -647,7 +652,7 @@ ${sentencesStr}
               else alert("Audio generation failed on both models.");
           } catch (e2) {
               console.error(e2);
-              alert("TTS Service unavailable.");
+              alert("TTS Service unavailable (Check Quota/Network).");
           }
       } finally {
           setIsProcessingAudio(false);
