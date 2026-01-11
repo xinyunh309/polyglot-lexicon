@@ -22,10 +22,14 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Using Pro Preview TTS for stability & quality
-const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-pro-preview-tts"; 
+// Models Configuration
+const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons)
+const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality, Multi-speaker (Playground)
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
+
+// Voice Pool for Multi-speaker
+const AVAILABLE_VOICES = ['Kore', 'Fenrir', 'Puck', 'Aoede', 'Charon'];
 
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -124,35 +128,6 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   }
 };
 
-const concatAudioParts = (parts: string[]) => {
-  try {
-    const arrays = parts.map(part => {
-      const bin = atob(part);
-      const arr = new Uint8Array(bin.length);
-      for(let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return arr;
-    });
-    
-    const totalLength = arrays.reduce((acc, curr) => acc + curr.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    arrays.forEach(arr => {
-      result.set(arr, offset);
-      offset += arr.length;
-    });
-
-    let binary = '';
-    const len = result.byteLength;
-    for (let i = 0; i < len; i += 1024) {
-      binary += String.fromCharCode.apply(null, Array.from(result.subarray(i, Math.min(i + 1024, len))));
-    }
-    return btoa(binary);
-  } catch (e) {
-    console.error("Audio concat error", e);
-    return "";
-  }
-};
-
 const renderBoldText = (text: string) => {
   if (!text || typeof text !== 'string') return null;
   const parts = text.split(/(\*\*.*?\*\*)/);
@@ -231,10 +206,11 @@ interface ChatMessage { role: 'user' | 'ai'; text: string; timestamp: number; }
 // 4. 组件 (Components)
 // ==========================================
 
+// ✅ Updated: Uses GEMINI_SIMPLE_TTS_MODEL for basic buttons
 const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: string; lang: Language, size?: number, label?: string, minimal?: boolean }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
+   
   const playAudio = (url: string) => {
     const audio = new Audio(url);
     audio.onplay = () => { setIsPlaying(true); setIsLoading(false); };
@@ -250,7 +226,8 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     
     setIsLoading(true);
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`, {
+      // Uses the simple/flash preview for buttons
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               contents: [{ parts: [{ text: text }] }], 
@@ -305,7 +282,7 @@ export default function App() {
   const [generatedIndex, setGeneratedIndex] = useState(0);
   const [entry, setEntry] = useState<VocabEntry | null>(null);
   const [history, setHistory] = useState<VocabEntry[]>([]);
-    
+     
   // UI States
   const [inputWord, setInputWord] = useState('');
   const [inputText, setInputText] = useState('');
@@ -316,10 +293,10 @@ export default function App() {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
-  
+   
   // Conjugation Modal
   const [showConjugationModal, setShowConjugationModal] = useState(false);
-    
+     
   // Story & Chat & Image
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
@@ -332,12 +309,12 @@ export default function App() {
 
   // Playground State
   const [playgroundInput, setPlaygroundInput] = useState('');
-  const [playgroundLang, setPlaygroundLang] = useState<Language>('en');
+  const [playgroundLang, setPlaygroundLang] = useState<Language | 'auto'>('auto');
   const [playgroundMode, setPlaygroundMode] = useState<'learning' | 'reinforce'>('learning');
   const [playgroundChat, setPlaygroundChat] = useState<ChatMessage[]>([]);
   const [playgroundUserMsg, setPlaygroundUserMsg] = useState('');
   const [isPlaygroundChatting, setIsPlaygroundChatting] = useState(false);
-   
+    
   // Playground 音频状态
   const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
@@ -377,7 +354,6 @@ export default function App() {
              id: doc.id, ...rawData, addedAt: rawData.addedAt || rawData.created_at || Date.now(), 
              entry: rawData.entry || { word: "Error Data", sentences: [] } 
           };
-          // Critical Safety Check for Data
           if (!cleanItem.entry.sentences) cleanItem.entry.sentences = [];
           items.push(cleanItem);
       });
@@ -464,7 +440,7 @@ ${sentencesStr}
   const callGemini = async (prompt: string, isJson: boolean = false) => {
     try {
       if (requestCache.has(prompt)) return requestCache.get(prompt);
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               contents: [{ parts: [{ text: prompt }] }], 
@@ -481,14 +457,14 @@ ${sentencesStr}
     } catch (error) { console.error("Gemini API Error:", error); return null; }
   };
 
-  // --- Playground Logic (Full) ---
+  // --- Playground Logic (Chat) ---
   const handlePlaygroundChat = async () => {
     if (!playgroundUserMsg.trim()) return;
     const userMsg: ChatMessage = { role: 'user', text: playgroundUserMsg, timestamp: Date.now() };
     const newHistory = [...playgroundChat, userMsg];
     setPlaygroundChat(newHistory); setPlaygroundUserMsg(''); setIsPlaygroundChatting(true);
 
-    const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
+    const langLabel = playgroundLang === 'auto' ? "detected language" : LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
     let systemPrompt = "";
     
     if (playgroundMode === 'learning') {
@@ -499,11 +475,11 @@ ${sentencesStr}
             Goal: Engage in a natural conversation about this text or topic.
             - Correct any major grammar mistakes gently in your response.
             - Keep the conversation flowing.
-            - Respond in ${langLabel} primarily, but provide Chinese hints if the user seems stuck or asks.
+            - Respond in target language primarily, but provide Chinese hints if the user seems stuck or asks.
         `;
     } else {
         const validWords = savedItems
-            .filter(i => i.entry.lang === playgroundLang)
+            .filter(i => playgroundLang === 'auto' || i.entry.lang === playgroundLang)
             .map(i => i.entry.word);
         
         const randomWords = validWords.sort(() => 0.5 - Math.random()).slice(0, 5);
@@ -518,7 +494,7 @@ ${sentencesStr}
             1. Ask a question related to the input text: "${playgroundInput.substring(0, 300)}...".
             2. TRY to guide the user to use one of the target words in their answer.
             3. If they use a target word correctly, praise them.
-            4. Respond in ${langLabel}.
+            4. Respond in target language.
         `;
     }
     const historyText = newHistory.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
@@ -527,82 +503,86 @@ ${sentencesStr}
     if (response) setPlaygroundChat([...newHistory, { role: 'ai', text: response, timestamp: Date.now() }]);
   };
 
-  // ✅ Playground Audio
+  // ✅ Playground Audio (Multi-speaker / Pro Model)
   const handlePlaygroundAudio = async (action: 'play' | 'download') => {
       if (!playgroundInput.trim()) return;
       setIsProcessingAudio(true);
       
       try {
-          const lines = ttsGender === 'dialogue' 
-            ? playgroundInput.split('\n').filter(l => l.trim()) 
-            : [playgroundInput];
+          const isDialogue = ttsGender === 'dialogue';
+          let speechConfig: any = {};
 
-          const audioParts: string[] = [];
-          
-          // Voice assignment map for roles
-          const roleVoiceMap = new Map<string, string>();
-          let nextVoiceIndex = 0;
-          const voices = ['Kore', 'Fenrir']; // F, M
+          if (isDialogue) {
+              // 1. Identify speakers
+              const lines = playgroundInput.split('\n');
+              const speakerMap = new Map<string, string>(); // Name -> VoiceName
+              const distinctSpeakers: string[] = [];
+              
+              lines.forEach(line => {
+                  const match = line.match(/^([^:：]+)[:：]/);
+                  if (match) {
+                      const name = match[1].trim();
+                      if (!speakerMap.has(name) && distinctSpeakers.length < 5) {
+                          const voiceName = AVAILABLE_VOICES[distinctSpeakers.length];
+                          speakerMap.set(name, voiceName);
+                          distinctSpeakers.push(name);
+                      }
+                  }
+              });
 
-          for (let i = 0; i < lines.length; i++) {
-             let line = lines[i];
-             let textToSpeak = line;
-             let voiceName = 'Kore';
+              if (distinctSpeakers.length > 0) {
+                  // Construct Multi-speaker Config
+                  const speakerVoiceConfigs = distinctSpeakers.map(name => ({
+                      speaker: name,
+                      voiceConfig: { 
+                          prebuiltVoiceConfig: { voiceName: speakerMap.get(name)! } 
+                      }
+                  }));
 
-             if (ttsGender === 'dialogue') {
-                 // Check for "Name: Content" pattern
-                 const match = line.match(/^([^:：]+)[:：]\s*(.+)/);
-                 if (match) {
-                     const name = match[1].trim();
-                     textToSpeak = match[2].trim(); // Strip name for TTS
-                     
-                     // Assign voice to role
-                     if (!roleVoiceMap.has(name)) {
-                         roleVoiceMap.set(name, voices[nextVoiceIndex % 2]);
-                         nextVoiceIndex++;
-                     }
-                     voiceName = roleVoiceMap.get(name)!;
-                 } else {
-                     // No name found, alternate based on line index if standard
-                     voiceName = i % 2 === 0 ? 'Kore' : 'Fenrir';
-                 }
-             } else {
-                 voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
-             }
-
-             if (textToSpeak.length < 1) continue;
-
-             const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
-               {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({
-                       contents: [{ parts: [{ text: textToSpeak }] }], 
-                       generationConfig: { 
-                           responseModalities: ["AUDIO"], 
-                           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } 
-                       }
-                   }),
-               }
-             );
-
-             if (!response.ok) continue;
-             const data = await response.json();
-             const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-             if (part) audioParts.push(part);
+                  speechConfig = {
+                      multiSpeakerVoiceConfig: {
+                          speakerVoiceConfigs: speakerVoiceConfigs
+                      }
+                  };
+              } else {
+                  // Fallback if no speaker tags found in dialogue mode
+                  speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } };
+              }
+          } else {
+              // Standard Single Speaker
+              speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsGender === 'female' ? "Kore" : "Fenrir" } } };
           }
           
-          if (audioParts.length > 0) {
-              const mergedBase64 = audioParts.length === 1 ? audioParts[0] : concatAudioParts(audioParts);
-              const wavUrl = pcmToWav(mergedBase64);
+          // Use GEMINI_PRO_TTS_MODEL for Playground
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: isDialogue ? `TTS the following conversation, ignoring the speaker name in audio:\n${playgroundInput}` : playgroundInput }] }], 
+                    generationConfig: { 
+                        responseModalities: ["AUDIO"], 
+                        speechConfig: speechConfig
+                    }
+                }),
+            }
+          );
+
+          if (!response.ok) throw new Error("TTS Generation failed");
+          
+          const data = await response.json();
+          const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          
+          if (base64Audio) {
+              const wavUrl = pcmToWav(base64Audio);
               
               if (action === 'play') {
                   new Audio(wavUrl).play();
               } else {
                   const link = document.createElement('a');
                   link.href = wavUrl;
-                  link.download = `polyglot_${playgroundLang}_${ttsGender}_${Date.now()}.wav`;
+                  link.download = `polyglot_pro_${playgroundLang}_${Date.now()}.wav`;
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
@@ -637,14 +617,13 @@ ${sentencesStr}
         targetLangCode = targetLangObj?.code || "en";
     }
 
-    // ✅ FIX: Strict Prompt for Lemma, Chinese Punctuation, and Comprehensive Conjugation
     const systemPrompt = `You are a precise lexicographer API. 
     Role: Generate a STRICT JSON object for the word "${target}". 
-    
+     
     ${shouldUseAuto 
       ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
       : `Target Language: ${targetLangLabel} (${targetLangCode}).`}
-    
+     
     User Language: Chinese (Simplified).
 
     RULES:
@@ -667,7 +646,7 @@ ${sentencesStr}
        - Include Indicative: Present, Imperfect, Future, Compound Past (e.g., Passato Prossimo), Remote/Simple Past (e.g., Passato Remoto).
        - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
        - Include: Participles (Present & Past) grouped under a single "Participles" section.
-    
+     
     JSON SCHEMA:
     {
       "word": "Lemma of ${target}",
@@ -853,7 +832,6 @@ ${sentencesStr}
     setIsGeneratingStory(false);
   };
 
-  // ✅ FIX: Concrete Image Prompt
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
@@ -915,14 +893,19 @@ ${sentencesStr}
   };
 
   const showEntryJson = () => { if (!entry) return; alert(JSON.stringify(entry, null, 2)); };
-  
+   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
-  // ✅ FIX: Improved Algorithm + Weight Tuning (Theme+Level)
+  // ✅ FIX: Contextually Related based on Meaning (Score > 5)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
-    const currentThemeLower = (entry.theme || '').toLowerCase();
+    
+    // Helper to check text inclusion
+    const checkTextOverlap = (text1: string, text2: string) => {
+        if (!text1 || !text2) return false;
+        return text1.toLowerCase().includes(text2.toLowerCase());
+    };
 
     const scored = savedItems
         .filter(item => item.id !== (isCurrentSaved?.id || '')) 
@@ -936,7 +919,7 @@ ${sentencesStr}
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
             const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
 
-            // 1. Semantic Check
+            // 1. Direct Synonym / CrossRef Match (High Relevance)
             const isSemanticMatch = 
                 itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) ||
                 entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) ||
@@ -945,17 +928,17 @@ ${sentencesStr}
             
             if (isSemanticMatch) score += 10;
 
-            // 2. Theme Check (Increased weight +5)
-            const itemThemeLower = (item.entry.theme || '').toLowerCase();
-            if (itemThemeLower && currentThemeLower && itemThemeLower.includes(currentThemeLower)) score += 5;
-            
-            // 3. Metadata Match
-            if (item.entry.pos === entry.pos) score += 1;
-            if (item.entry.level === entry.level) score += 2; 
+            // 2. Definition Overlap (Medium Relevance)
+            if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) {
+                score += 3;
+            }
+
+            // 3. Metadata Match (Low Relevance - not enough alone)
+            if (item.entry.pos === entry.pos) score += 0.5;
             
             return { item, score };
         })
-        .filter(x => x.score > 0)
+        .filter(x => x.score > 2) // Filter low relevance
         .sort((a, b) => b.score - a.score) 
         .slice(0, 6); 
     
@@ -990,6 +973,7 @@ ${sentencesStr}
       </div>
 
       <div className="max-w-7xl mx-auto p-4 md:p-8 min-h-[100dvh] flex flex-col">
+        {/* ✅ Updated Header: Cleaned up */}
         <header className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-col items-start">
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
@@ -998,22 +982,11 @@ ${sentencesStr}
             </h1>
             <p className="text-xs text-slate-400 font-medium mt-1 ml-10">Advanced Vocabulary Builder (B2-C2)</p>
           </div>
-          <label className="ml-6 cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-colors text-xs font-bold">
-            <span>📂 Import JSON</span>
-            <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
-          </label>
           <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
-              <button onClick={() => setIsAutoLang(!isAutoLang)} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'text-slate-400 hover:bg-slate-50'}`}>
-                  {isAutoLang ? "⚡ Auto-Lang" : "Manual"}
-              </button>
-              {!isAutoLang && (
-                  <select value={currentLang} onChange={(e) => setCurrentLang(e.target.value as Language)} className="text-xs font-bold bg-transparent outline-none text-slate-600">
-                      {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
-                  </select>
-              )}
-              <button onClick={showEntryJson} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Export JSON">
-                 <Code size={16}/>
-              </button>
+               <label className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-colors text-xs font-bold">
+                <span>📂 Import JSON</span>
+                <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
+              </label>
               <div className="w-px h-4 bg-slate-200 mx-1"></div>
               <div className="hidden md:flex gap-1">
                 {['dictionary', 'playground', 'library', 'review'].map(tab => (
@@ -1030,6 +1003,18 @@ ${sentencesStr}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 h-full items-start">
               {/* Left: Input Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
+                {/* ✅ Moved Language Selector Here */}
+                <div className="flex gap-2 mb-2">
+                     <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'}`}>
+                        {isAutoLang ? "⚡ Auto-Detect" : "Manual Select"}
+                     </button>
+                     {!isAutoLang && (
+                         <select value={currentLang} onChange={(e) => setCurrentLang(e.target.value as Language)} className="flex-[2] text-xs font-bold bg-white border border-slate-200 rounded-lg px-2 outline-none text-slate-600">
+                             {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
+                         </select>
+                     )}
+                </div>
+
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                    <div className="flex gap-2 mb-4 p-1 bg-slate-100 rounded-lg">
                        {['word', 'text', 'import'].map(m => ( 
@@ -1094,7 +1079,6 @@ ${sentencesStr}
                              )}
                              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                                  <div className="w-full min-w-0">
-                                     {/* ✅ FIX: New Conjugation Status Bar */}
                                      {entry.morphology && (
                                          <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold w-full md:w-auto">
                                              <Split size={14}/> {entry.morphology}
@@ -1114,7 +1098,6 @@ ${sentencesStr}
                                          {/* Font Size Clamp for Mobile */}
                                          <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words hyphens-auto" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}>{entry.word}</h2>
                                          
-                                         {/* ✅ FIX: Conjugation Table Button */}
                                          {entry.conjugations && entry.conjugations.length > 0 && (
                                              <button onClick={()=>setShowConjugationModal(true)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors" title="View Conjugations">
                                                  <Grid3X3 size={20}/>
@@ -1154,7 +1137,6 @@ ${sentencesStr}
                                  </div>
                                  <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word)} className="cursor-pointer flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
                                  
-                                 {/* ✅ FIX: Moved to Full Width Layout */}
                                  <div className="md:col-span-2">
                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
                                     <div className="flex flex-wrap gap-2">
@@ -1166,7 +1148,7 @@ ${sentencesStr}
                                                 </div>
                                                 {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
                                             </button>
-                                        )) : <span className="text-sm text-slate-300 italic">No related words found yet.</span>}
+                                        )) : <span className="text-sm text-slate-300 italic">No highly relevant words found.</span>}
                                     </div>
                                  </div>
                              </div>
@@ -1195,7 +1177,14 @@ ${sentencesStr}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)]">
                 {/* Left: Input & TTS */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2><select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">{LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select></div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2>
+                        {/* ✅ Added Auto to Playground */}
+                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">
+                             <option value="auto">⚡ Auto</option>
+                             {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
+                        </select>
+                    </div>
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
                     
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -1231,7 +1220,12 @@ ${sentencesStr}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
                 <div className="p-5 border-b border-slate-200 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-3"><div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Library size={20}/></div><div><h2 className="text-lg font-bold text-slate-900">Your Collection</h2><p className="text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
-                    <div className="flex gap-2"><button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button><button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button></div>
+                    <div className="flex gap-2">
+                        {/* ✅ Export JSON kept here */}
+                        <button onClick={() => alert(JSON.stringify(savedItems, null, 2))} className="px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-slate-50 transition-all"><Code size={14}/> Export JSON</button>
+                        <button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button>
+                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
+                    </div>
                 </div>
                 {/* Filters */}
                 <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-3 items-center">
