@@ -1234,6 +1234,10 @@ ${sentencesStr}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
+                                     
+                                     {/* 👇 修复点：加回了这行 Gender Tag，解决了 isNoun 未使用的报错 */}
+                                     {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700 shrink-0"/>}
+                                     
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
                                      {entry.conjugations && entry.conjugations.length > 0 && (
