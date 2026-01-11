@@ -703,7 +703,15 @@ ${sentencesStr}
       try {
           const themes = [...new Set(savedItems.map(i => i.entry.theme))];
           const posList = [...new Set(savedItems.map(i => i.entry.pos))];
-          const prompt = `Role: Data Cleaner. Task 1 (POS): Standardize to Chinese (noun->名词, v.->动词). Input POS: ${JSON.stringify(posList)} Task 2 (Themes): Group into 8-10 Chinese categories. Input Themes: ${JSON.stringify(themes)} Output JSON strictly: { "posMap": {"old": "new"}, "themeMap": {"old": "new"} }`;
+          const prompt = `
+          Role: Data Cleaner.
+          Task 1 (POS): Standardize to Chinese (noun->名词, v.->动词). 
+          Input POS: ${JSON.stringify(posList)}
+          Task 2 (Themes): Group into 8-10 Chinese categories.
+          Input Themes: ${JSON.stringify(themes)}
+          Output JSON strictly: { "posMap": {"old": "new"}, "themeMap": {"old": "new"} }
+          `;
+
           const result = await callGemini(prompt, true);
           if (result) {
               const data = JSON.parse(result);
@@ -711,12 +719,22 @@ ${sentencesStr}
               const themeMap = data.themeMap || {};
               const batch = writeBatch(db);
               let updateCount = 0;
+
               savedItems.forEach(item => {
                   let needsUpdate = false;
                   const updates: any = {};
-                  if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) { updates['entry.pos'] = posMap[item.entry.pos]; needsUpdate = true; }
-                  if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) { updates['entry.theme'] = themeMap[item.entry.theme]; needsUpdate = true; }
-                  if (needsUpdate) { batch.update(doc(db, 'vocabulary', item.id), updates); updateCount++; }
+                  if (posMap[item.entry.pos] && posMap[item.entry.pos] !== item.entry.pos) {
+                      updates['entry.pos'] = posMap[item.entry.pos];
+                      needsUpdate = true;
+                  }
+                  if (themeMap[item.entry.theme] && themeMap[item.entry.theme] !== item.entry.theme) {
+                      updates['entry.theme'] = themeMap[item.entry.theme];
+                      needsUpdate = true;
+                  }
+                  if (needsUpdate) {
+                      batch.update(doc(db, 'vocabulary', item.id), updates);
+                      updateCount++;
+                  }
               });
               if (updateCount > 0) await batch.commit();
               alert(`✅ Cleaned ${updateCount} items.`);
@@ -837,23 +855,42 @@ ${sentencesStr}
    
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
+  // ✅ Corrected relatedWords (Syntax Fix)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
-    const checkTextOverlap = (text1: string, text2: string) => { if (!text1 || !text2) return false; return text1.toLowerCase().includes(text2.toLowerCase()); };
-    const scored = savedItems.filter(item => item.id !== (isCurrentSaved?.id || '')).map(item => {
+    
+    const checkTextOverlap = (text1: string, text2: string) => { 
+        if (!text1 || !text2) return false; 
+        return text1.toLowerCase().includes(text2.toLowerCase()); 
+    };
+
+    const scored = savedItems
+        .filter(item => item.id !== (isCurrentSaved?.id || ''))
+        .map(item => {
             let score = 0;
             const itemWordLower = (item.entry.word || '').toLowerCase();
             const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
             const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
             const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
-            const isSemanticMatch = itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) || entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) || itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) || entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
+
+            const isSemanticMatch = 
+                itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) || 
+                entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) || 
+                itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) || 
+                entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
+            
             if (isSemanticMatch) score += 10;
             if (checkTextOverlap(item.entry.meaning, entry.word) || checkTextOverlap(entry.meaning, item.entry.word)) { score += 3; }
             if (item.entry.pos === entry.pos) score += 0.5;
+            
             return { item, score };
-        }).filter(x => x.score > 2).sort((a, b) => b.score - a.score).slice(0, 6); 
+        })
+        .filter(x => x.score > 2)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6); 
+    
     return scored.map(x => x.item.entry);
   }, [entry, savedItems, isCurrentSaved]);
 
@@ -1085,6 +1122,7 @@ ${sentencesStr}
           {mainTab === 'playground' && (
             <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full">
                 {/* Left: Input & TTS */}
+                {/* Mobile: h-[55%] / Desktop: h-full */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[55%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
@@ -1093,8 +1131,10 @@ ${sentencesStr}
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
+                    {/* Compact Input */}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
+                    {/* Controls Row */}
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
