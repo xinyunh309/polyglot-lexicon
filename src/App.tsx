@@ -1331,17 +1331,17 @@ ${sentencesStr}
                         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
                         {isReviewFlipped && (
                             <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-3 gap-3 shrink-0">
-                                {/* 🔴 修复点：传入 'reset' 而不是 false */}
+                                {/* 🔴 修复点：这里原来是 false，现在改为 'reset' */}
                                 <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('reset');}} className="py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
                                     <X size={16}/> <span>Forgot</span>
                                 </button>
                                 
-                                {/* 🔵 新增：传入 'boost' */}
+                                {/* 🔵 新增：+14 Days 按钮 */}
                                 <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('boost');}} className="py-3 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
                                     <Clock size={16}/> <span>+14 Days</span>
                                 </button>
 
-                                {/* 🟢 修复点：传入 'remember' 而不是 true */}
+                                {/* 🟢 修复点：这里原来是 true，现在改为 'remember' */}
                                 <button onClick={(e)=>{e.stopPropagation(); setGeneratedImage(null); handleReviewAction('remember');}} className="py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 text-xs md:text-sm">
                                     <Check size={16}/> <span>{getNextIntervalLabel(reviewQueue[0].stage)}</span>
                                 </button>
