@@ -1310,8 +1310,10 @@ ${sentencesStr}
           {/* PLAYGROUND TAB (Compact Mobile Layout) */}
           {mainTab === 'playground' && (
             <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full pb-16 md:pb-0">
-                {/* Left: Input & TTS (Mobile: Top 45% height / Desktop: Full Height) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[42%] lg:h-full min-h-0 shrink-0">
+                
+                {/* Left: Input & TTS (Mobile: Top 50% height / Desktop: Full Height) */}
+                {/* 👇 修改 1: h-[42%] 改为 h-[50%]，拉长 Input 区域 */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[50%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
@@ -1327,7 +1329,8 @@ ${sentencesStr}
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
                             <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> M</button>
-                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={10}/> Dia</button>
+                            {/* 👇 修改 2: 文案改回 Dialogue */}
+                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={10}/> Dialogue</button>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                             <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-[10px] font-bold" title="Play"><Volume2 size={12}/> Play</button>
@@ -1336,7 +1339,7 @@ ${sentencesStr}
                     </div>
                 </div>
                 
-                {/* Right: AI Chat (Mobile: Bottom 58% height / Desktop: Full Height) */}
+                {/* Right: AI Chat (Mobile: Bottom 50% height / Desktop: Full Height) */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
                     <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
