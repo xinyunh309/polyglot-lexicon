@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Code, Clock, Calendar,
-  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
+  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers, Languages
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -22,10 +22,15 @@ import {
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Use Flash for logic/analysis, Pro Preview for TTS
+// Logic / Analysis
 const GEMINI_MODEL = "gemini-2.5-flash"; 
-const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
 const IMAGEN_MODEL = "imagen-3.0-fast-generate-001"; 
+
+// TTS Models Strategy
+// Playground uses PRO for high quality long text
+const TTS_MODEL_PLAYGROUND = "gemini-2.5-pro-tts"; 
+// Global (Dictionary/Review) uses FLASH for speed and quota efficiency
+const TTS_MODEL_GLOBAL = "gemini-2.5-flash-tts";
 
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -66,15 +71,15 @@ const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id';
 
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
-  { code: 'en', label: 'EN', voiceCode: 'en-US', flag: '🇬🇧' },
-  { code: 'zh', label: 'ZH', voiceCode: 'zh-CN', flag: '🇨🇳' },
-  { code: 'ja', label: 'JP', voiceCode: 'ja-JP', flag: '🇯🇵' },
-  { code: 'ko', label: 'KR', voiceCode: 'ko-KR', flag: '🇰🇷' },
-  { code: 'de', label: 'DE', voiceCode: 'de-DE', flag: '🇩🇪' },
-  { code: 'fr', label: 'FR', voiceCode: 'fr-FR', flag: '🇫🇷' },
-  { code: 'es', label: 'ES', voiceCode: 'es-ES', flag: '🇪🇸' },
-  { code: 'it', label: 'IT', voiceCode: 'it-IT', flag: '🇮🇹' },
-  { code: 'id', label: 'ID', voiceCode: 'id-ID', flag: '🇮🇩' },
+  { code: 'en', label: 'English', voiceCode: 'en-US', flag: '🇬🇧' },
+  { code: 'zh', label: 'Chinese', voiceCode: 'zh-CN', flag: '🇨🇳' },
+  { code: 'ja', label: 'Japanese', voiceCode: 'ja-JP', flag: '🇯🇵' },
+  { code: 'ko', label: 'Korean', voiceCode: 'ko-KR', flag: '🇰🇷' },
+  { code: 'de', label: 'German', voiceCode: 'de-DE', flag: '🇩🇪' },
+  { code: 'fr', label: 'French', voiceCode: 'fr-FR', flag: '🇫🇷' },
+  { code: 'es', label: 'Spanish', voiceCode: 'es-ES', flag: '🇪🇸' },
+  { code: 'it', label: 'Italian', voiceCode: 'it-IT', flag: '🇮🇹' },
+  { code: 'id', label: 'Indonesian', voiceCode: 'id-ID', flag: '🇮🇩' },
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
@@ -154,7 +159,7 @@ const renderChatText = (text: string) => {
     return renderBoldText(clean);
 };
 
-const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词' };
+const POS_MAP: Record<string, string> = { 'noun': '名词', 'verb': '动词', 'adjective': '形容词', 'adverb': '副词', 'preposition': '介词', 'conjunction': '连词', 'pronoun': '代词', 'phrase': '短语', 'idiom': '习语', 'expression': '表达', 'n': '名词', 'v': '动词', 'adj': '形容词', 'adv': '副词', 'reflexive verb': '自反动词', 'mutual verb': '自反动词' };
 const formatPOS = (pos: string): string => {
     if (!pos) return '未知';
     const lower = pos.toLowerCase().trim();
@@ -221,7 +226,8 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     
     setIsLoading(true);
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`, {
+      // NOTE: Using FLASH model for general dictionary TTS to save quota/latency
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL_GLOBAL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               contents: [{ parts: [{ text: text }] }], 
@@ -303,7 +309,7 @@ export default function App() {
 
   // Playground State
   const [playgroundInput, setPlaygroundInput] = useState('');
-  const [playgroundLang, setPlaygroundLang] = useState<Language>('en');
+  const [playgroundLang, setPlaygroundLang] = useState<Language | 'auto'>('auto'); // Added auto
   const [playgroundMode, setPlaygroundMode] = useState<'learning' | 'reinforce'>('learning');
   const [playgroundChat, setPlaygroundChat] = useState<ChatMessage[]>([]);
   const [playgroundUserMsg, setPlaygroundUserMsg] = useState('');
@@ -455,7 +461,7 @@ ${sentencesStr}
     const newHistory = [...playgroundChat, userMsg];
     setPlaygroundChat(newHistory); setPlaygroundUserMsg(''); setIsPlaygroundChatting(true);
 
-    const langLabel = LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
+    const langLabel = playgroundLang === 'auto' ? "Target Language" : LANGUAGES.find(l => l.code === playgroundLang)?.label || "Target Language";
     let systemPrompt = "";
     
     if (playgroundMode === 'learning') {
@@ -470,7 +476,7 @@ ${sentencesStr}
         `;
     } else {
         const validWords = savedItems
-            .filter(i => i.entry.lang === playgroundLang)
+            .filter(i => playgroundLang === 'auto' || i.entry.lang === playgroundLang)
             .map(i => i.entry.word);
         
         const randomWords = validWords.sort(() => 0.5 - Math.random()).slice(0, 5);
@@ -557,8 +563,9 @@ ${sentencesStr}
           }
 
           // 3. Execute Request
+          // NOTE: Using PRO model for Playground TTS (higher quality for dialogues)
           const response = await fetch(
-               `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`,
+               `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL_PLAYGROUND}:generateContent?key=${apiKey}`,
                {
                    method: 'POST',
                    headers: { 'Content-Type': 'application/json' },
@@ -740,19 +747,58 @@ ${sentencesStr}
 
   const handleAutoCluster = async () => {
       setIsClustering(true);
-      const themes = [...new Set(savedItems.map(i => i.entry.theme))];
-      const result = await callGemini(`Group themes into 6-8 CN categories. JSON { "old": "new" }. Themes: ${JSON.stringify(themes)}`, true);
+      const itemsSnapshot = savedItems.map(i => ({ id: i.id, theme: i.entry.theme, pos: i.entry.pos, word: i.entry.word }));
+      
+      const prompt = `
+        TASK: Organize Vocabulary.
+        1. Cluster Themes: Group these specific themes into 6-8 broad CHINESE categories (e.g., 生活, 商业, 科技, 情感).
+        2. Normalize POS: Standardize Part-of-Speech tags to CHINESE.
+           - Rules: "Proper Noun"/"Legal Noun" -> "名词". "Mutual Verb"/"Reciprocal Verb" -> "自反动词".
+           - Allowed POS: 名词, 动词, 形容词, 副词, 介词, 连词, 代词, 短语, 习语.
+        
+        INPUT DATA: ${JSON.stringify(itemsSnapshot.slice(0, 100))} (Processing first 100 for safety)
+        
+        OUTPUT JSON:
+        {
+           "theme_map": { "old_theme": "new_broad_theme" },
+           "pos_updates": { "item_id": "new_standardized_pos" }
+        }
+      `;
+
+      const result = await callGemini(prompt, true);
       setIsClustering(false);
+      
       if (result) {
           try {
-              const map = JSON.parse(result);
+              const data = JSON.parse(result);
               const batch = writeBatch(db);
+              let count = 0;
+
               savedItems.forEach(item => {
-                  if (map[item.entry.theme]) batch.update(doc(db, 'vocabulary', item.id), { 'entry.theme': map[item.entry.theme] });
+                  let updated = false;
+                  const updates: any = {};
+                  
+                  // Update Theme
+                  if (data.theme_map && data.theme_map[item.entry.theme]) {
+                      updates['entry.theme'] = data.theme_map[item.entry.theme];
+                      updated = true;
+                  }
+                  
+                  // Update POS via ID mapping or heuristic if ID missing
+                  if (data.pos_updates && data.pos_updates[item.id]) {
+                       updates['entry.pos'] = data.pos_updates[item.id];
+                       updated = true;
+                  }
+
+                  if (updated) {
+                      batch.update(doc(db, 'vocabulary', item.id), updates);
+                      count++;
+                  }
               });
-              await batch.commit();
-              alert("Themes Organized!");
-          } catch (e) { console.error(e); }
+              
+              if (count > 0) await batch.commit();
+              alert(`Cluster Complete! Updated ${count} items.`);
+          } catch (e) { console.error(e); alert("Clustering failed."); }
       }
   };
 
@@ -890,39 +936,42 @@ ${sentencesStr}
   
   const isCurrentSaved = useMemo(() => savedItems.find(i => i.entry.word === entry?.word), [savedItems, entry]);
 
+  // ✅ FIX: Enhanced Related Words Logic (Semantic Only)
   const relatedWords = useMemo(() => {
     if (!entry || !entry.word) return []; 
     const currentWordLower = (entry.word || '').toLowerCase();
-    const currentThemeLower = (entry.theme || '').toLowerCase();
+    
+    // Safety check for array properties
+    const currentCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
+    const currentSynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
 
     const scored = savedItems
         .filter(item => item.id !== (isCurrentSaved?.id || '')) 
         .map(item => {
             let score = 0;
             const itemWordLower = (item.entry.word || '').toLowerCase();
-            
             const itemCrossRefs = Array.isArray(item.entry.crossRefs) ? item.entry.crossRefs : [];
-            const entryCrossRefs = Array.isArray(entry.crossRefs) ? entry.crossRefs : [];
             const itemSynonyms = Array.isArray(item.entry.synonyms) ? item.entry.synonyms : [];
-            const entrySynonyms = Array.isArray(entry.synonyms) ? entry.synonyms : [];
 
-            const isSemanticMatch = 
-                itemCrossRefs.some(r => (r?.word || '').toLowerCase() === currentWordLower) ||
-                entryCrossRefs.some(r => (r?.word || '').toLowerCase() === itemWordLower) ||
-                itemSynonyms.some(s => (s || '').toLowerCase() === currentWordLower) ||
-                entrySynonyms.some(s => (s || '').toLowerCase() === itemWordLower);
-            
-            if (isSemanticMatch) score += 10;
+            // 1. Cross-Reference Match (High Priority)
+            if (currentCrossRefs.some(r => r.word.toLowerCase() === itemWordLower)) score += 50;
+            if (itemCrossRefs.some(r => r.word.toLowerCase() === currentWordLower)) score += 50;
 
-            const itemThemeLower = (item.entry.theme || '').toLowerCase();
-            if (itemThemeLower && currentThemeLower && itemThemeLower.includes(currentThemeLower)) score += 5;
+            // 2. Synonym Match (High Priority)
+            if (currentSynonyms.some(s => s.toLowerCase() === itemWordLower)) score += 40;
+            if (itemSynonyms.some(s => s.toLowerCase() === currentWordLower)) score += 40;
+
+            // 3. Meaning Keyword Match (Medium Priority)
+            if (item.entry.meaning.includes(entry.meaning) || entry.meaning.includes(item.entry.meaning)) score += 10;
             
+            // 4. POS Match (Low Priority, only as tie-breaker)
             if (item.entry.pos === entry.pos) score += 1;
-            if (item.entry.level === entry.level) score += 2; 
+            
+            // REMOVED: Theme scoring to avoid unrelated "Business" words grouping together
             
             return { item, score };
         })
-        .filter(x => x.score > 0)
+        .filter(x => x.score >= 10) // Only keep high relevance
         .sort((a, b) => b.score - a.score) 
         .slice(0, 6); 
     
@@ -965,23 +1014,8 @@ ${sentencesStr}
             </h1>
             <p className="text-xs text-slate-400 font-medium mt-1 ml-10">Advanced Vocabulary Builder (B2-C2)</p>
           </div>
-          <label className="ml-6 cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-colors text-xs font-bold">
-            <span>📂 Import JSON</span>
-            <input type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
-          </label>
+          {/* ✅ FIX: Removed JSON button & Lang selector from Header */}
           <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
-              <button onClick={() => setIsAutoLang(!isAutoLang)} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'text-slate-400 hover:bg-slate-50'}`}>
-                  {isAutoLang ? "⚡ Auto-Lang" : "Manual"}
-              </button>
-              {!isAutoLang && (
-                  <select value={currentLang} onChange={(e) => setCurrentLang(e.target.value as Language)} className="text-xs font-bold bg-transparent outline-none text-slate-600">
-                      {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
-                  </select>
-              )}
-              <button onClick={showEntryJson} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Export JSON">
-                 <Code size={16}/>
-              </button>
-              <div className="w-px h-4 bg-slate-200 mx-1"></div>
               <div className="hidden md:flex gap-1">
                 {['dictionary', 'playground', 'library', 'review'].map(tab => (
                 <button key={tab} onClick={() => setMainTab(tab as any)} className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all capitalize ${mainTab === tab ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -998,6 +1032,18 @@ ${sentencesStr}
               {/* Left: Input Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                   {/* ✅ FIX: Moved Language Selector Here */}
+                   <div className="flex items-center gap-2 mb-4">
+                        <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                            {isAutoLang ? "⚡ Auto-Detect" : "Manual Mode"}
+                        </button>
+                        {!isAutoLang && (
+                            <select value={currentLang} onChange={(e) => setCurrentLang(e.target.value as Language)} className="flex-[2] text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 outline-none text-slate-700">
+                                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
+                            </select>
+                        )}
+                   </div>
+
                    <div className="flex gap-2 mb-4 p-1 bg-slate-100 rounded-lg">
                        {['word', 'text', 'import'].map(m => ( 
                            <button key={m} onClick={() => setInputMode(m as any)} className={`flex-1 py-1.5 text-xs font-bold uppercase rounded-md transition-all ${inputMode === m ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{m}</button>
@@ -1061,7 +1107,6 @@ ${sentencesStr}
                              )}
                              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                                  <div className="w-full min-w-0">
-                                     {/* ✅ FIX: New Conjugation Status Bar */}
                                      {entry.morphology && (
                                          <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold w-full md:w-auto">
                                              <Split size={14}/> {entry.morphology}
@@ -1078,10 +1123,8 @@ ${sentencesStr}
                                      </div>
                                      
                                      <div className="relative flex items-center gap-3">
-                                         {/* Font Size Clamp for Mobile */}
                                          <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words hyphens-auto" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)' }}>{entry.word}</h2>
                                          
-                                         {/* ✅ FIX: Conjugation Table Button */}
                                          {entry.conjugations && entry.conjugations.length > 0 && (
                                              <button onClick={()=>setShowConjugationModal(true)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors" title="View Conjugations">
                                                  <Grid3X3 size={20}/>
@@ -1116,23 +1159,37 @@ ${sentencesStr}
                              <div className="space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-xs font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-2 pl-1">{s.translation}</div></div>))}</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-slate-100">
                                  <div className="space-y-6">
+                                     {/* Synonyms & Antonyms */}
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s)} className="cursor-pointer px-2.5 py-1 bg-rose-50 text-rose-700 text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-sm text-slate-300 italic">None</span>}</div></div>
                                      
-                                     {/* ✅ FIX: Moved to Full Width Layout */}
+                                     {/* ✅ FIX: Cross-References / Multilingual Synonyms */}
+                                     <div className="md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3 flex items-center gap-1"><Globe size={12}/> Cross-Language Cognates</span>
+                                         <div className="flex flex-wrap gap-3">
+                                            {(entry?.crossRefs || []).length > 0 ? entry?.crossRefs.map((ref, i) => (
+                                                <button key={`xref-${i}`} onClick={() => handleJump(ref.word)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:shadow-sm transition-all text-sm font-medium text-slate-700">
+                                                    <span>{getFlag(ref.lang)}</span>
+                                                    <span>{ref.word}</span>
+                                                </button>
+                                            )) : <span className="text-sm text-slate-300 italic">No cross-references available.</span>}
+                                         </div>
+                                     </div>
+
+                                     {/* ✅ FIX: Semantic Contextual Relations */}
                                      <div className="md:col-span-2">
-                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">Contextually Related</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
-                                                    <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
-                                                </div>
-                                                {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
-                                            </button>
-                                        )) : <span className="text-sm text-slate-300 italic">No related words found yet.</span>}
-                                    </div>
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">High Relevance Related Words</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                                <button key={`rel-${i}`} onClick={() => handleJump(w.word)} className="group flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
+                                                        <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 10)}...</span>
+                                                    </div>
+                                                </button>
+                                            )) : <span className="text-sm text-slate-300 italic">No highly relevant words found.</span>}
+                                        </div>
+                                     </div>
                                  </div>
                              </div>
                              <div className="pt-6 border-t border-slate-100">
@@ -1161,7 +1218,14 @@ ${sentencesStr}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)]">
                 {/* Left: Input & TTS */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2><select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">{LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}</select></div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Playground Input</h2>
+                        {/* ✅ FIX: Added Auto to Playground Lang Select */}
+                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as any)} className="text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300">
+                            <option value="auto">⚡ Auto-Detect</option>
+                            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
+                        </select>
+                    </div>
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-lg leading-relaxed mb-4" placeholder="Type or paste text here (any language)..." />
                     
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -1197,7 +1261,12 @@ ${sentencesStr}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
                 <div className="p-5 border-b border-slate-200 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-3"><div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Library size={20}/></div><div><h2 className="text-lg font-bold text-slate-900">Your Collection</h2><p className="text-xs text-slate-500">{savedItems.length} items • {savedItems.filter(i=>!i.isArchived).length} active</p></div></div>
-                    <div className="flex gap-2"><button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button><button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button></div>
+                    <div className="flex gap-2">
+                        {/* ✅ FIX: JSON Export button moved here */}
+                        <button onClick={showEntryJson} className="px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-slate-50 transition-all"><Code size={14}/> JSON</button>
+                        <button onClick={handleAutoCluster} disabled={isClustering} className="px-3 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 transition-all">{isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} Auto Cluster</button>
+                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all"><Sparkles size={14}/> AI Story</button>
+                    </div>
                 </div>
                 {/* Filters */}
                 <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-3 items-center">
