@@ -28,9 +28,6 @@ const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple 
 const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality, Multi-speaker (Playground)
 const IMAGEN_MODEL = "imagen-4.0-fast-generate-001"; 
 
-// Voice Pool for Multi-speaker
-const AVAILABLE_VOICES = ['Kore', 'Fenrir', 'Puck', 'Aoede', 'Charon'];
-
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
