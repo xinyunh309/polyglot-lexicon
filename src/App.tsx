@@ -1090,9 +1090,6 @@ ${sentencesStr}
   const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
-    // 🔴 修复 1: 根容器采用混合布局
-    // Mobile: fixed inset-0 (锁死视口，实现 App 质感，解决 Nav 和 Playground 高度问题)
-    // Desktop: static min-h-screen (恢复网页流式布局，允许自然滚动)
     <div className="fixed inset-0 md:static md:min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col safe-p-b">
       
       {/* Header */}
@@ -1118,18 +1115,13 @@ ${sentencesStr}
         </header>
       </div>
 
-      {/* 🔴 修复 2: Main 容器
-         - Mobile: flex-1 overflow-hidden (强制子元素自己处理滚动，防止撑开页面)
-         - Desktop: overflow-visible (允许内容自然撑开)
-      */}
       <main className="flex-1 flex flex-col min-w-0 w-full max-w-7xl mx-auto p-4 md:p-8 pt-2 md:pt-0 overflow-hidden md:overflow-visible">
           
           {/* DICTIONARY TAB */}
           {mainTab === 'dictionary' && (
-            // Mobile: h-full overflow-y-auto (内部滚动)
-            // Desktop: h-auto (自然撑高)
             <div className="h-full overflow-y-auto md:h-auto md:overflow-visible grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 items-start custom-scrollbar pb-2 md:pb-0">
-              {/* Left: Input Panel */}
+              
+              {/* Left Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
                 <div className="flex gap-2 mb-2">
                      <button onClick={() => setIsAutoLang(!isAutoLang)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg transition-colors border ${isAutoLang ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'}`}>
@@ -1183,10 +1175,10 @@ ${sentencesStr}
                 </div>
               </div>
 
-              {/* Right: Card Display */}
+              {/* Right Panel */}
               <div className="lg:col-span-8 min-w-0">
                 {entry ? (
-                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
+                    <div className="bg-white rounded-2xl shadow-xl border border-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col relative">
                         <div className={`bg-slate-50/80 p-4 md:p-8 border-b border-slate-100 relative ${history.length > 0 ? 'pl-10 md:pl-8' : ''}`}>
                              {history.length > 0 && (
                                  <button onClick={handleBack} className="absolute top-4 left-3 md:left-4 z-20 p-1.5 md:p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-500 transition-all shadow-sm group">
@@ -1205,7 +1197,6 @@ ${sentencesStr}
                              )}
 
                              <div className="flex flex-col gap-3">
-                                 {/* 1. Word Title Row */}
                                  <div className="min-w-0">
                                      {entry.morphology && (
                                          <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold">
@@ -1215,14 +1206,12 @@ ${sentencesStr}
                                      <h2 className="font-serif font-bold text-slate-900 leading-none tracking-tight break-words" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.5rem)' }}>{entry.word}</h2>
                                  </div>
 
-                                 {/* 2. Tags Row (Tags + Verb Table Icon) */}
                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:flex-wrap">
                                      <Tag text={entry.lang?.toUpperCase() || 'EN'} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('lang', entry.lang)} />
                                      <Tag text={formatPOS(entry.pos)} colorClass="bg-white border border-slate-200 text-slate-500 shadow-sm shrink-0" onClick={()=>handleTagJump('pos', entry.pos)} />
                                      {isNoun(entry.pos) && entry.gender && <Tag text={entry.gender} colorClass="bg-purple-50 border border-purple-100 text-purple-700 shrink-0"/>}
                                      <Tag text={entry.level} colorClass="bg-amber-50 border border-amber-100 text-amber-700 shrink-0" icon={ChevronRight} onClick={()=>handleTagJump('level', entry.level)} />
                                      <Tag text={entry.theme} colorClass="bg-blue-50 border border-blue-100 text-blue-700 shrink-0" icon={Hash} onClick={()=>handleTagJump('theme', entry.theme)} />
-                                     
                                      {entry.conjugations && entry.conjugations.length > 0 && (
                                          <button onClick={()=>setShowConjugationModal(true)} className="p-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md shrink-0 hover:bg-indigo-100 transition-colors" title="Verb Conjugations">
                                              <Grid3X3 size={14}/>
@@ -1230,11 +1219,7 @@ ${sentencesStr}
                                      )}
                                  </div>
 
-                                 {/* 3. Combined Meta & Actions Row (Merged for PC) */}
-                                 {/* flex-col on Mobile, flex-row on Desktop (md:flex-row) */}
                                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-1 pt-2 border-t border-slate-100 md:border-0 md:pt-0">
-                                     
-                                     {/* Left: Meta Info (Flag, Pronunciation, Audio, Image) */}
                                      <div className="flex items-center gap-3">
                                          <span className="text-2xl drop-shadow-sm">{getFlag(entry.lang)}</span>
                                          {entry.pronunciation && (
@@ -1247,7 +1232,6 @@ ${sentencesStr}
                                          </div>
                                      </div>
 
-                                     {/* Right: Actions (Save, Archive, Enrich) - Now on same line in PC */}
                                      <div className="flex items-center gap-2 justify-end">
                                         {isCurrentSaved && (
                                             <>
@@ -1257,41 +1241,45 @@ ${sentencesStr}
                                                 <button onClick={handleSmartEnrich} disabled={isEnriching} className={`p-2 rounded-lg border transition-all bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100`} title="Auto-Enrich">{isEnriching ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/></button>
                                             </>
                                         )}
-                                        {/* Save Button */}
                                         <button onClick={handleSmartSave} className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs md:text-sm ${saveStatus==='saved' ? 'bg-emerald-500 text-white' : isCurrentSaved ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
                                             {saveStatus==='saved' ? <CheckCircle size={16}/> : isCurrentSaved ? <><Merge size={16}/> Update</> : <><Save size={16}/> Save</>}
                                         </button>
                                      </div>
                                  </div>
                              </div>
+                        </div>
 
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
-                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Visual Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
+                             {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
                              <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
-                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg md:text-xl font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
+                             
                              <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
+                             
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 pt-6 md:pt-8 border-t border-slate-100">
                                  <div className="space-y-4 md:space-y-6">
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Synonyms</span><div className="flex flex-wrap gap-2">{(entry?.synonyms || []).length > 0 ? entry?.synonyms.map((s, i)=><span key={`syn-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-indigo-50 text-indigo-700 text-xs md:text-sm font-medium rounded-md hover:bg-indigo-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                      <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Antonyms</span><div className="flex flex-wrap gap-2">{(entry?.antonyms || []).length > 0 ? entry?.antonyms.map((s, i)=><span key={`ant-${i}`} onClick={()=>handleJump(s, entry.lang)} className="cursor-pointer px-2 py-1 bg-rose-50 text-rose-700 text-xs md:text-sm font-medium rounded-md hover:bg-rose-100 transition-colors">{s}</span>) : <span className="text-xs text-slate-300 italic">None</span>}</div></div>
                                  </div>
-                                 <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm md:text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs md:text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
-                                 
-                                 <div className="md:col-span-2">
-                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Contextually Related</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {relatedWords.length > 0 ? relatedWords.map((w, i) => (
-                                            <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
-                                                    <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span>
-                                                </div>
-                                                {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
-                                            </button>
-                                        )) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}
-                                    </div>
+                                 <div className="space-y-4">
+                                     <div><span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Cross-Language</span><div className="flex flex-wrap gap-2">{(entry?.crossRefs || []).map((ref, i) => (<div key={i} onClick={()=>handleJump(ref.word, ref.lang)} className="cursor-pointer flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-indigo-200 transition-colors group"><span className="text-sm md:text-base opacity-80 group-hover:opacity-100 transition-opacity">{getFlag(ref.lang)}</span> <span className="text-xs md:text-sm font-medium text-slate-700">{ref.word}</span></div>))}</div></div>
+                                     <div>
+                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3">Related</span>
+                                         <div className="flex flex-wrap gap-2">
+                                             {relatedWords.length > 0 ? relatedWords.map((w, i) => (
+                                                 <button key={`rel-${i}`} onClick={() => handleJump(w.word, w.lang)} className="group flex items-center gap-2 px-2 py-1.5 md:px-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-white transition-all text-left">
+                                                     <div className="flex flex-col">
+                                                         <span className="text-xs font-bold text-slate-700 flex items-center gap-1">{getFlag(w.lang)} {w.word}</span>
+                                                         <span className="text-[10px] text-slate-400">{(w.meaning || '').substring(0, 8)}...</span>
+                                                     </div>
+                                                     {w.theme === entry.theme && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" title="Same Theme"></span>}
+                                                 </button>
+                                             )) : <span className="text-xs text-slate-300 italic">No highly relevant words found.</span>}
+                                         </div>
+                                     </div>
                                  </div>
                              </div>
+
                              <div className="pt-4 md:pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
                                     <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
@@ -1314,13 +1302,10 @@ ${sentencesStr}
 
           {/* PLAYGROUND TAB */}
           {mainTab === 'playground' && (
-            // 🔴 修复 3: 高度逻辑分离
-            // Mobile: h-full (占满 Mobile main 容器)
-            // Desktop: h-[calc(100vh-140px)] (固定高度，确保 Grid 布局正常)
-            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full md:h-[calc(100vh-140px)] pb-16 md:pb-0">
-                {/* Left: Input */}
-                {/* Mobile h-[60%] / Desktop h-full */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
+            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full">
+                {/* Left: Input & TTS */}
+                {/* Mobile: h-[55%] / Desktop: h-full */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[55%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
@@ -1328,8 +1313,10 @@ ${sentencesStr}
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
+                    {/* Compact Input */}
                     <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
+                    {/* Controls Row */}
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
@@ -1344,7 +1331,6 @@ ${sentencesStr}
                 </div>
                 
                 {/* Right: AI Chat */}
-                {/* Mobile: flex-1 (自动填满剩余 60%) / Desktop: h-full */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
                     <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
@@ -1365,9 +1351,6 @@ ${sentencesStr}
            
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
-            // Mobile: h-full (内部滚动)
-            // Desktop: h-[calc(100vh-140px)] (维持固定高度，或改 h-auto 让它滚动)
-            // 这里恢复为固定高度，因为 Library 通常需要内部滚动条来固定 Filter 栏
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full md:h-[calc(100vh-140px)] overflow-hidden pb-16 md:pb-0">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-2">
