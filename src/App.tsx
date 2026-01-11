@@ -1097,20 +1097,12 @@ ${sentencesStr}
   const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 md:pb-0 safe-p-b">
-      {/* Mobile Nav */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-50 flex justify-around py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-safe">
-        {['dictionary', 'playground', 'library', 'review'].map(tab => (
-            <button key={tab} onClick={() => setMainTab(tab as any)} className={`flex flex-col items-center gap-1 ${mainTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
-                {tab==='dictionary'?<BookOpen size={20}/>:tab==='playground'?<Gamepad2 size={20}/>:tab==='library'?<Library size={20}/>:<RefreshCw size={20}/>}
-                <span className="text-[10px] font-bold uppercase">{tab}</span>
-            </button>
-        ))}
-      </div>
-
-      <div className="max-w-7xl mx-auto p-4 md:p-8 min-h-[100dvh] flex flex-col">
-        {/* ✅ Header: Mobile Sticky Fix */}
-        <header className="sticky top-0 z-40 bg-slate-50/95 backdrop-blur-md mb-4 md:mb-8 pt-2 pb-2 md:static md:bg-transparent md:p-0 -mx-4 px-4 md:mx-0 shadow-[0_1px_2px_rgba(0,0,0,0.03)] md:shadow-none flex flex-col md:flex-row justify-between items-center gap-4 transition-all">
+    // ✅ 1. 最外层锁死：fixed inset-0 禁止页面级滚动，像原生App一样
+    <div className="fixed inset-0 bg-slate-50 text-slate-800 font-sans flex flex-col overflow-hidden safe-p-b">
+      
+      {/* ✅ 2. Header：静态放置，不随下方内容滚动 */}
+      <div className="shrink-0 bg-slate-50 z-50 px-4 pt-4 md:px-8 md:pt-8 pb-2 shadow-[0_1px_2px_rgba(0,0,0,0.02)] md:shadow-none">
+        <header className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-7xl mx-auto w-full">
           <div className="flex flex-col items-start w-full md:w-auto">
             <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2 md:gap-3">
                 <div className="bg-indigo-600 text-white p-1 md:p-1.5 rounded-lg"><Globe size={18} className="md:w-5 md:h-5" /></div>
@@ -1129,11 +1121,13 @@ ${sentencesStr}
               </div>
           </div>
         </header>
+      </div>
 
-        <main className="flex-1 flex flex-col min-w-0">
+      {/* ✅ 3. Main：占据剩余空间，内部溢出隐藏，强制子Tab自己滚动 */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden w-full max-w-7xl mx-auto p-4 md:p-8 pt-2 md:pt-0">
           {/* DICTIONARY TAB (Full Replacement to fix syntax errors) */}
           {mainTab === 'dictionary' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 h-full items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 h-full items-start pb-16 md:pb-0 overflow-y-auto lg:overflow-hidden">
               {/* Left: Input Panel */}
               <div className="lg:col-span-4 space-y-4 min-w-0">
                 {/* Language Selector */}
@@ -1313,58 +1307,59 @@ ${sentencesStr}
             </div>
           )}
 
-          {/* PLAYGROUND TAB */}
+          {/* PLAYGROUND TAB (Compact Mobile Layout) */}
           {mainTab === 'playground' && (
-            // 👇 修改：使用 dvh (dynamic viewport height) 适配 iOS Safari 地址栏，减少 gap
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-8 h-[calc(100dvh-130px)] md:h-[calc(100vh-140px)]">
-                
-                {/* Left: Input & TTS */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-full min-h-0">
-                    <div className="flex justify-between items-center mb-2 md:mb-3 shrink-0">
-                        <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={20} className="text-indigo-600"/> Input</h2>
-                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-sm font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-300">
+            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full pb-16 md:pb-0">
+                {/* Left: Input & TTS (Mobile: Top 45% height / Desktop: Full Height) */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[42%] lg:h-full min-h-0 shrink-0">
+                    <div className="flex justify-between items-center mb-2 shrink-0">
+                        <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
+                        <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
                              <option value="auto">⚡ Auto</option>
                              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{getFlag(l.code)} {l.label}</option>)}
                         </select>
                     </div>
-                    {/* Input Area: Flex-1 to take available space */}
-                    <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 md:p-4 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base md:text-lg leading-relaxed mb-2 md:mb-3 min-h-0" placeholder="Type or paste text here..." />
+                    {/* Compact Input */}
+                    <textarea value={playgroundInput} onChange={e=>setPlaygroundInput(e.target.value)} className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-100 text-base leading-relaxed mb-2 min-h-0" placeholder="Type or paste text..." />
                     
-                    <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0">
-                        <div className="flex bg-white p-1 rounded-lg border border-slate-200 shrink-0">
-                            <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> F</button>
-                            <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={12}/> M</button>
-                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={12}/> Dia</button>
+                    {/* Controls Row */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                        <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
+                            <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
+                            <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> M</button>
+                            <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={10}/> Dia</button>
                         </div>
-                        <div className="w-px h-4 bg-slate-200 shrink-0"></div>
-                        <div className="flex items-center gap-1 md:gap-2 shrink-0">
-                            <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 md:px-3 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-xs font-bold" title="Play"><Volume2 size={14}/> Play</button>
-                            <button onClick={()=>handlePlaygroundAudio('download')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 md:px-3 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-xs font-bold" title="Download"><Download size={14}/></button>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-[10px] font-bold" title="Play"><Volume2 size={12}/> Play</button>
+                            <button onClick={()=>handlePlaygroundAudio('download')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-[10px] font-bold" title="Download"><Download size={12}/></button>
                         </div>
                     </div>
                 </div>
                 
-                {/* Right: AI Chat */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0">
-                    <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
-                        <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={20} className="text-indigo-600"/> Smart Chat</h2>
-                        <div className="flex bg-white rounded-lg p-1 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all flex items-center gap-1 md:gap-2 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={12} className="md:w-3.5 md:h-3.5"/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all flex items-center gap-1 md:gap-2 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={12} className="md:w-3.5 md:h-3.5"/> Test</button></div>
+                {/* Right: AI Chat (Mobile: Bottom 58% height / Desktop: Full Height) */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 flex-1">
+                    <div className="p-2 md:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+                        <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><MessageCircle size={18} className="text-indigo-600"/> Smart Chat</h2>
+                        <div className="flex bg-white rounded-lg p-0.5 border border-slate-200"><button onClick={()=>setPlaygroundMode('learning')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='learning'?'bg-indigo-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><Bot size={10}/> Learn</button><button onClick={()=>setPlaygroundMode('reinforce')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${playgroundMode==='reinforce'?'bg-emerald-600 text-white':'text-slate-500 hover:bg-slate-50'}`}><GraduationCap size={10}/> Test</button></div>
                     </div>
-                    {/* Chat Area: Flex-1, reduced padding */}
-                    <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 bg-slate-50/30 custom-scrollbar">
-                        {playgroundChat.length === 0 && (<div className="text-center py-10 text-slate-400"><Bot size={40} className="mx-auto mb-4 opacity-50"/><p className="text-sm">Type left & chat right!</p></div>)}
-                        {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 md:px-4 md:py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
-                        {isPlaygroundChatting && (<div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-2xl rounded-bl-none border border-slate-100 shadow-sm"><Loader2 size={16} className="animate-spin text-indigo-500"/></div></div>)}
+                    
+                    {/* Chat Messages */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/30 custom-scrollbar">
+                        {playgroundChat.length === 0 && (<div className="text-center py-6 text-slate-400"><Bot size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Start chatting below!</p></div>)}
+                        {playgroundChat.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none'}`}>{renderBoldText(m.text)}</div></div>))}
+                        {isPlaygroundChatting && (<div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-2xl rounded-bl-none border border-slate-100 shadow-sm"><Loader2 size={14} className="animate-spin text-indigo-500"/></div></div>)}
                         <div ref={playgroundEndRef} />
                     </div>
-                    <div className="p-2 md:p-4 border-t border-slate-100 bg-white shrink-0"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 md:px-4 md:py-3 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Chat with AI..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-2.5 md:p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={18}/></button></div></div>
+                    
+                    {/* Chat Input */}
+                    <div className="p-2 border-t border-slate-100 bg-white shrink-0"><div className="flex gap-2"><input value={playgroundUserMsg} onChange={e=>setPlaygroundUserMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePlaygroundChat()} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all placeholder:text-slate-400 text-sm" placeholder="Message..." /><button onClick={handlePlaygroundChat} disabled={!playgroundInput && playgroundChat.length===0} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"><Send size={16}/></button></div></div>
                 </div>
             </div>
           )}
            
           {/* LIBRARY TAB */}
           {mainTab === 'library' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-140px)]">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
                 {/* Header: Mobile Optimized */}
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
                     <div className="flex items-center gap-2">
