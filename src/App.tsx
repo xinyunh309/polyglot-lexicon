@@ -1516,63 +1516,76 @@ ${sentencesStr}
                 )}
              </div>
           )}
-        </main>
+        </main> {/* ✅ 核心修复：在这里闭合 MAIN 标签 */}
 
-        {showStoryModal && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900"><Sparkles size={20} className="text-purple-500"/> AI Memory Story</h3>
-                        <button onClick={()=>setShowStoryModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
-                    </div>
-                    <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-                        {isGeneratingStory ? (<div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40}/><p className="font-medium">Weaving your story...</p></div>) : storyContent ? (
-                            <div className="space-y-6"><div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-4"><div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div><TTSButton text={storyContent.target_story} lang={entry?.lang || 'en'} label="Listen to Story" size={18}/></div><div className="prose prose-lg leading-loose text-slate-800">{renderBoldText(storyContent.target_story)}</div></div><div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100"><div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div><div className="leading-loose text-indigo-900 text-lg">{renderBoldText(storyContent.mixed_story)}</div></div></div>
-                        ) : <div className="text-center text-slate-400">Error loading story.</div>}
-                    </div>
-                </div>
-            </div>
-        )}
+      {/* --- Modals (放在 Main 之外，防止被 overflow hidden 裁剪) --- */}
 
-        {/* ✅ FIX: Enhanced Conjugation Modal */}
-        {showConjugationModal && entry?.conjugations && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Layers size={20}/></div>
-                            <div>
-                                <h3 className="font-bold text-lg text-slate-900">Verb Conjugations</h3>
-                                <p className="text-xs text-slate-500 font-mono">Lemma: {entry.word}</p>
-                            </div>
-                        </div>
-                        <button onClick={()=>setShowConjugationModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
-                    </div>
-                    <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/50">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {entry.conjugations.map((c, i) => (
-                                <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow">
-                                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 font-bold text-sm text-indigo-900 uppercase tracking-wide flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
-                                        {c.tense}
-                                    </div>
-                                    <div className="p-4 flex-1">
-                                        <div className="grid grid-cols-1 gap-1.5">
-                                            {c.forms.map((f, idx) => (
-                                                <div key={idx} className="text-sm text-slate-700 py-1 px-2 hover:bg-slate-50 rounded transition-colors border-b border-slate-50 last:border-0 font-medium">
-                                                    {f}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
+      {/* AI Story Modal */}
+      {showStoryModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                      <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900"><Sparkles size={20} className="text-purple-500"/> AI Memory Story</h3>
+                      <button onClick={()=>setShowStoryModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+                      {isGeneratingStory ? (<div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40}/><p className="font-medium">Weaving your story...</p></div>) : storyContent ? (
+                          <div className="space-y-6"><div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-4"><div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div><TTSButton text={storyContent.target_story} lang={entry?.lang || 'en'} label="Listen to Story" size={18}/></div><div className="prose prose-lg leading-loose text-slate-800">{renderBoldText(storyContent.target_story)}</div></div><div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100"><div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div><div className="leading-loose text-indigo-900 text-lg">{renderBoldText(storyContent.mixed_story)}</div></div></div>
+                      ) : <div className="text-center text-slate-400">Error loading story.</div>}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Verb Conjugation Modal */}
+      {showConjugationModal && entry?.conjugations && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                      <div className="flex items-center gap-3">
+                          <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600"><Layers size={20}/></div>
+                          <div>
+                              <h3 className="font-bold text-lg text-slate-900">Verb Conjugations</h3>
+                              <p className="text-xs text-slate-500 font-mono">Lemma: {entry.word}</p>
+                          </div>
+                      </div>
+                      <button onClick={()=>setShowConjugationModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {entry.conjugations.map((c, i) => (
+                              <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow">
+                                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 font-bold text-sm text-indigo-900 uppercase tracking-wide flex items-center gap-2">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                                      {c.tense}
+                                  </div>
+                                  <div className="p-4 flex-1">
+                                      <div className="grid grid-cols-1 gap-1.5">
+                                          {c.forms.map((f, idx) => (
+                                              <div key={idx} className="text-sm text-slate-700 py-1 px-2 hover:bg-slate-50 rounded transition-colors border-b border-slate-50 last:border-0 font-medium">
+                                                  {f}
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Mobile Nav (Fixed Bottom) - 重新加回底部导航 */}
+      <div className="md:hidden shrink-0 bg-white border-t border-slate-200 z-50 flex justify-around py-2 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {['dictionary', 'playground', 'library', 'review'].map(tab => (
+            <button key={tab} onClick={() => setMainTab(tab as any)} className={`flex flex-col items-center gap-1 p-1 ${mainTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
+                {tab==='dictionary'?<BookOpen size={20}/>:tab==='playground'?<Gamepad2 size={20}/>:tab==='library'?<Library size={20}/>:<RefreshCw size={20}/>}
+                <span className="text-[10px] font-bold uppercase">{tab}</span>
+            </button>
+        ))}
       </div>
-    </div>
+
+    </div> 
   );
 }
