@@ -311,6 +311,7 @@ export default function App() {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [notesInput, setNotesInput] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
   useEffect(() => {
     if (entry) {
         setNotesInput(entry.personalNotes || '');
@@ -969,6 +970,41 @@ ${sentencesStr}
     setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
+  // ✅ 新增: 单独保存笔记的函数
+  const handleSaveNotes = async () => {
+      if (!entry) return;
+      setIsSavingNotes(true);
+      try {
+          const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
+          const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
+          const now = Date.now();
+
+          if (exist) {
+              // 如果词条已存在，更新 entry 中的 personalNotes
+              const merged = { ...exist.entry, personalNotes: notesInput };
+              await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged) });
+          } else {
+              // 如果词条还没保存，则创建新词条并带上笔记
+              const newItem = { 
+                  id: crypto.randomUUID(), 
+                  entry: { ...entry, word: wordToSave, personalNotes: notesInput }, 
+                  stage: 0, 
+                  nextReviewDate: now, 
+                  lastReviewedDate: now, 
+                  created_at: now, 
+                  addedAt: now, 
+                  isArchived: false 
+              };
+              await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Failed to save notes.");
+      } finally {
+          setIsSavingNotes(false);
+      }
+  };
+
   const handleReviewAction = async (action: 'reset' | 'remember' | 'boost') => {
       const item = reviewQueue[0]; if (!item) return; 
       setReviewQueue(prev => prev.slice(1)); setIsReviewFlipped(false);
@@ -1337,13 +1373,22 @@ ${sentencesStr}
                                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3 flex items-center gap-2">
                                       Personal Notes <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">Private</span>
                                   </span>
-                                  <textarea 
-                                      value={notesInput}
-                                      onChange={(e) => setNotesInput(e.target.value)}
-                                      placeholder="Write your own mnemonics, context, or examples here..."
-                                      className="w-full bg-amber-50/50 border border-amber-100/80 rounded-xl p-3 text-sm text-slate-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-300 outline-none resize-none h-24 placeholder:text-slate-400"
-                                   />
-                                 </div>
+                                  <button 
+                                                 onClick={handleSaveNotes} 
+                                                 disabled={isSavingNotes}
+                                                 className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                             >
+                                                 {isSavingNotes ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
+                                                 Save Notes
+                                             </button>
+                                         </div>
+                                         <textarea 
+                                             value={notesInput}
+                                             onChange={(e) => setNotesInput(e.target.value)}
+                                             placeholder="Write your own mnemonics, context, or examples here..."
+                                             className="w-full bg-amber-50/50 border border-amber-100/80 rounded-xl p-3 text-sm text-slate-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-300 outline-none resize-none h-24 placeholder:text-slate-400"
+                                         />
+                                     </div>
                              <div className="pt-4 md:pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
                                     <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
