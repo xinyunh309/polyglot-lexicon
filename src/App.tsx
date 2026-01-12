@@ -197,6 +197,7 @@ interface VocabEntry {
   antonyms: string[]; 
   crossRefs: { lang: string; word: string }[]; 
   conjugations?: { tense: string; forms: string[] }[]; 
+  personalNotes?: string;
   source?: string;
 }
 interface ReviewItem {
@@ -309,6 +310,12 @@ export default function App() {
   const [isChatting, setIsChatting] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [notesInput, setNotesInput] = useState('');
+  useEffect(() => {
+    if (entry) {
+        setNotesInput(entry.personalNotes || '');
+    }
+  }, [entry]);
 
   // Playground State
   const [playgroundInput, setPlaygroundInput] = useState('');
@@ -933,17 +940,32 @@ ${sentencesStr}
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
-    
     setSaveStatus('saved'); 
     
     if (exist) {
-      const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
+      // ✅ 修改：保存时合并 personalNotes
+      const merged = { 
+          ...exist.entry, 
+          sentences: [...exist.entry.sentences, ...entry.sentences], 
+          synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], 
+          crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs],
+          personalNotes: notesInput // <--- 保存笔记
+      };
       await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
     } else {
-      const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
+      // ✅ 修改：新单词保存时包含 personalNotes
+      const newItem = { 
+          id: crypto.randomUUID(), 
+          entry: { ...entry, word: wordToSave, personalNotes: notesInput }, // <--- 保存笔记
+          stage: 0, 
+          nextReviewDate: now, 
+          lastReviewedDate: now, 
+          created_at: now, 
+          addedAt: now, 
+          isArchived: false 
+      };
       await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
     }
-    
     setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
@@ -1311,6 +1333,17 @@ ${sentencesStr}
                                     </div>
                                  </div>
                              </div>
+                             <div>
+                                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3 flex items-center gap-2">
+                                      Personal Notes <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">Private</span>
+                                  </span>
+                                  <textarea 
+                                      value={notesInput}
+                                      onChange={(e) => setNotesInput(e.target.value)}
+                                      placeholder="Write your own mnemonics, context, or examples here..."
+                                      className="w-full bg-amber-50/50 border border-amber-100/80 rounded-xl p-3 text-sm text-slate-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-300 outline-none resize-none h-24 placeholder:text-slate-400"
+                                   />
+                                 </div>
                              <div className="pt-4 md:pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
                                     <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
@@ -1339,7 +1372,7 @@ ${sentencesStr}
             <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full md:h-[calc(100vh-140px)] pb-16 md:pb-0">
                 {/* Left: Input */}
                 {/* Mobile h-[60%] / Desktop h-full */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[40%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
