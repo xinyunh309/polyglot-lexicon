@@ -6,7 +6,7 @@ import {
   Upload, Merge, Database, Send, Eye, EyeOff, 
   Image as ImageIcon, Gamepad2, Trash2,
   Library, Sparkles, Filter, Archive, Check, ArrowUpDown, Clock, Calendar,
-  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers
+  Bot, GraduationCap, Download, User, ArrowLeft, Grid3X3, Split, Layers, StickyNote
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -197,8 +197,8 @@ interface VocabEntry {
   antonyms: string[]; 
   crossRefs: { lang: string; word: string }[]; 
   conjugations?: { tense: string; forms: string[] }[]; 
-  personalNotes?: string;
   source?: string;
+  notes?: string;
 }
 interface ReviewItem {
   id: string; entry: VocabEntry; stage: number; nextReviewDate: number; lastReviewedDate: number; addedAt?: number; created_at: number; isArchived: boolean; 
@@ -310,13 +310,48 @@ export default function App() {
   const [isChatting, setIsChatting] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [notesInput, setNotesInput] = useState('');
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
+
+  // ... (在 generatedMarkdown 状态定义之后)
+
+  // Personal Notes State
+  const [noteInput, setNoteInput] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
+  // Sync Notes when entry changes
   useEffect(() => {
     if (entry) {
-        setNotesInput(entry.personalNotes || '');
+      setNoteInput(entry.notes || '');
     }
   }, [entry]);
+
+  const handleSaveNote = async () => {
+    if (!entry) return;
+    setIsSavingNote(true);
+
+    // 1. Update Local Entry State
+    const updatedEntry = { ...entry, notes: noteInput };
+    setEntry(updatedEntry);
+
+    // 2. Update Generated List (to persist navigation)
+    const newGen = [...generatedEntries];
+    newGen[generatedIndex] = updatedEntry;
+    setGeneratedEntries(newGen);
+
+    // 3. Save to Firebase if the card exists
+    if (isCurrentSaved) {
+       try {
+         await updateDoc(doc(db, 'vocabulary', isCurrentSaved.id), {
+           'entry.notes': noteInput
+         });
+       } catch (e) {
+         console.error("Note save failed", e);
+         alert("Failed to save note to cloud.");
+       }
+    }
+    
+    // Fake delay for UI feedback
+    setTimeout(() => setIsSavingNote(false), 500);
+  };
 
   // Playground State
   const [playgroundInput, setPlaygroundInput] = useState('');
@@ -941,68 +976,18 @@ ${sentencesStr}
     const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
     const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
     const now = Date.now();
+    
     setSaveStatus('saved'); 
     
     if (exist) {
-      // ✅ 修改：保存时合并 personalNotes
-      const merged = { 
-          ...exist.entry, 
-          sentences: [...exist.entry.sentences, ...entry.sentences], 
-          synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], 
-          crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs],
-          personalNotes: notesInput // <--- 保存笔记
-      };
+      const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
       await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
     } else {
-      // ✅ 修改：新单词保存时包含 personalNotes
-      const newItem = { 
-          id: crypto.randomUUID(), 
-          entry: { ...entry, word: wordToSave, personalNotes: notesInput }, // <--- 保存笔记
-          stage: 0, 
-          nextReviewDate: now, 
-          lastReviewedDate: now, 
-          created_at: now, 
-          addedAt: now, 
-          isArchived: false 
-      };
+      const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
       await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
     }
+    
     setTimeout(() => setSaveStatus('idle'), 2000);
-  };
-
-  // ✅ 新增: 单独保存笔记的函数
-  const handleSaveNotes = async () => {
-      if (!entry) return;
-      setIsSavingNotes(true);
-      try {
-          const wordToSave = (entry.idiom && entry.idiom.length > entry.word.length) ? entry.idiom : entry.word;
-          const exist = savedItems.find(i => i.entry.word.toLowerCase() === wordToSave.toLowerCase());
-          const now = Date.now();
-
-          if (exist) {
-              // 如果词条已存在，更新 entry 中的 personalNotes
-              const merged = { ...exist.entry, personalNotes: notesInput };
-              await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged) });
-          } else {
-              // 如果词条还没保存，则创建新词条并带上笔记
-              const newItem = { 
-                  id: crypto.randomUUID(), 
-                  entry: { ...entry, word: wordToSave, personalNotes: notesInput }, 
-                  stage: 0, 
-                  nextReviewDate: now, 
-                  lastReviewedDate: now, 
-                  created_at: now, 
-                  addedAt: now, 
-                  isArchived: false 
-              };
-              await setDoc(doc(db, 'vocabulary', newItem.id), sanitizeData(newItem));
-          }
-      } catch (e) {
-          console.error(e);
-          alert("Failed to save notes.");
-      } finally {
-          setIsSavingNotes(false);
-      }
   };
 
   const handleReviewAction = async (action: 'reset' | 'remember' | 'boost') => {
@@ -1369,26 +1354,40 @@ ${sentencesStr}
                                     </div>
                                  </div>
                              </div>
-                             <div>
-                                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 md:mb-3 flex items-center gap-2">
-                                      Personal Notes <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">Private</span>
-                                  </span>
-                                  <button 
-                                                 onClick={handleSaveNotes} 
-                                                 disabled={isSavingNotes}
-                                                 className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
-                                             >
-                                                 {isSavingNotes ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
-                                                 Save Notes
-                                             </button>
-                                         </div>
-                                         <textarea 
-                                             value={notesInput}
-                                             onChange={(e) => setNotesInput(e.target.value)}
-                                             placeholder="Write your own mnemonics, context, or examples here..."
-                                             className="w-full bg-amber-50/50 border border-amber-100/80 rounded-xl p-3 text-sm text-slate-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-300 outline-none resize-none h-24 placeholder:text-slate-400"
-                                         />
-                                     </div>
+                             <div className="pt-4 md:pt-6 border-t border-slate-100">
+                                <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
+                                    <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
+                                    <div className="space-y-2 mb-2 max-h-[150px] md:max-h-[200px] overflow-y-auto custom-scrollbar">{chatMessages.map((m, i) => (<div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs md:text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-100 text-indigo-900 shadow-sm'}`}>{renderChatText(m.text)}</div></div>))}{isChatting && <div className="flex justify-start"><div className="bg-white px-3 py-2 rounded-lg border border-indigo-100"><Loader2 size={14} className="animate-spin text-indigo-400"/></div></div>}</div>
+                                    <div className="flex gap-2"><input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleChatSubmit()} className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none placeholder:text-indigo-200" placeholder="Ask details..." /><button onClick={handleChatSubmit} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Send size={14} className="md:w-4 md:h-4"/></button></div>
+                                </div>
+                             </div>
+                        </div>
+                      <div className="pt-4 md:pt-6 border-t border-slate-100">
+                                <div className="bg-amber-50/50 rounded-xl p-3 md:p-4 border border-amber-100/80">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <StickyNote size={14} className="text-amber-500"/>
+                                            <span className="text-[10px] md:text-xs font-bold text-amber-900 uppercase">Personal Notes</span>
+                                        </div>
+                                        <button 
+                                            onClick={handleSaveNote} 
+                                            disabled={isSavingNote || noteInput === (entry.notes || '')}
+                                            className="text-[10px] px-2 py-1 bg-amber-100 text-amber-800 rounded font-bold hover:bg-amber-200 disabled:opacity-50 transition-colors flex items-center gap-1"
+                                        >
+                                            {isSavingNote ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>}
+                                            {isSavingNote ? 'Saving...' : 'Save Note'}
+                                        </button>
+                                    </div>
+                                    <textarea 
+                                        value={noteInput}
+                                        onChange={(e) => setNoteInput(e.target.value)}
+                                        className="w-full bg-white border border-amber-200 rounded-lg p-3 text-xs md:text-sm text-slate-700 leading-relaxed outline-none focus:ring-2 focus:ring-amber-200 min-h-[80px] resize-y placeholder:text-slate-300"
+                                        placeholder="Add your own mnemonics, usage examples, or memory hooks here..."
+                                    />
+                                </div>
+                             </div>
+
+                             {/* AI Context Chat Section */}
                              <div className="pt-4 md:pt-6 border-t border-slate-100">
                                 <div className="bg-indigo-50/50 rounded-xl p-3 md:p-4 border border-indigo-100">
                                     <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><MessageCircle size={14} className="text-indigo-500"/><span className="text-[10px] md:text-xs font-bold text-indigo-900 uppercase">AI Context Chat</span></div><div className="flex gap-2"><button onClick={getEtymology} className="text-[10px] bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"><Clock size={10}/> Etymology</button><button onClick={startRoleplay} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 flex items-center gap-1"><Gamepad2 size={10}/> Roleplay</button></div></div>
@@ -1417,7 +1416,7 @@ ${sentencesStr}
             <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3 h-full md:h-[calc(100vh-140px)] pb-16 md:pb-0">
                 {/* Left: Input */}
                 {/* Mobile h-[60%] / Desktop h-full */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[40%] lg:h-full min-h-0 shrink-0">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 md:p-6 flex flex-col h-[60%] lg:h-full min-h-0 shrink-0">
                     <div className="flex justify-between items-center mb-2 shrink-0">
                         <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2"><Gamepad2 size={18} className="text-indigo-600"/> Input</h2>
                         <select value={playgroundLang} onChange={e=>setPlaygroundLang(e.target.value as Language | 'auto')} className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-300">
