@@ -27,7 +27,7 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
 const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-preview-tts"; // Fast, simple TTS (Buttons)
 const GEMINI_PRO_TTS_MODEL = "gemini-2.5-preview-tts"; // High Quality (Playground) - adjusted for availability
-const IMAGEN_MODEL = "imagen-3.0-generate-001"; 
+const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
