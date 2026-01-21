@@ -1191,16 +1191,6 @@ ${sentencesStr}
     setIsChatting(false); if (res) setChatMessages(prev => [...prev, { role: 'ai', text: res, timestamp: Date.now() }]);
   };
 
-  const handleStory = async (words: VocabEntry[]) => {
-    if (words.length === 0) return;
-    setIsGeneratingStory(true); setShowStoryModal(true);
-    const targetLang = words[0].lang; 
-    const langName = LANGUAGES.find(l => l.code === targetLang)?.label || targetLang;
-    const result = await callGemini(`Create story with: ${words.map(w=>w.word).join(',')}. CONSTRAINTS: 1. Target Story MUST be in ${langName}. 2. Mixed Story in Chinese with bold keywords. JSON: { "target_story": "...", "mixed_story": "..." }`, true);
-    if (result) { try { setStoryContent(JSON.parse(result)); } catch (e) { console.error(e); } }
-    setIsGeneratingStory(false);
-  };
-
   const handleGenerateImage = async () => {
       if (!entry) return;
       if (isGeneratingImage) return;
