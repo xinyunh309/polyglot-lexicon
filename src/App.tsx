@@ -1609,7 +1609,7 @@ ${sentencesStr}
                             {isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} 
                             <span className="hidden md:inline">Cluster</span>
                         </button>
-                        <button onClick={()=>handleStory(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all">
+                        <button onClick={()=>setShowStoryModal(savedItems.slice(0,8).map(i=>i.entry))} className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all">
                             <Sparkles size={14}/> <span className="md:inline">AI Story</span>
                         </button>
                     </div>
