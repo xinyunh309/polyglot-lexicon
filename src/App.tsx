@@ -501,8 +501,6 @@ export default function App() {
       
   // Story & Chat & Image
   const [showStoryModal, setShowStoryModal] = useState(false);
-  const [isGeneratingStory, setIsGeneratingStory] = useState(false);
-  const [storyContent, setStoryContent] = useState<StoryData | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
