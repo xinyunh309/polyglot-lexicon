@@ -273,7 +273,7 @@ const Tag = ({ icon: Icon, text, colorClass, onClick, title }: { icon?: any, tex
 // ==========================================
 // 5. 主应用逻辑 (Main App)
 // ==========================================
-// --- [UI 复原版] StoryModal 组件 ---
+// --- [100% UI还原 + 逻辑修正版] StoryModal ---
 const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: any) => {
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -281,7 +281,7 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
   const [history, setHistory] = useState<any[]>([]);
   const [currentStoryLang, setCurrentStoryLang] = useState<Language>('en');
 
-  // 1. 监听历史记录
+  // 1. 监听历史
   useEffect(() => {
     if (isOpen && db) {
       const q = query(collection(db, 'stories'), orderBy('timestamp', 'desc'));
@@ -293,52 +293,59 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     }
   }, [isOpen, db]);
 
-  // 2. 删除功能
+  // 2. 删除
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('Delete this story?')) {
-      await deleteDoc(doc(db, 'stories', id));
-    }
+    if (confirm('Delete this story?')) await deleteDoc(doc(db, 'stories', id));
   };
 
-  // 3. 点击历史加载
+  // 3. 点击历史回看
   const handleLoadHistory = (item: any) => {
     setStoryContent(item.content);
-    // 简单推断语言用于TTS
     const lang = item.keywords?.[0] ? savedItems.find((i:any) => i.entry.word === item.keywords[0])?.entry.lang : 'en';
     setCurrentStoryLang(lang || 'en');
     setActiveTab('generate');
   };
 
-  // 4. 生成逻辑
+  // 4. 生成逻辑 (修复筛选 + 语种混乱)
   const generateStory = async (mode: 'recent' | 'filtered') => {
     setIsGenerating(true);
     setStoryContent(null);
     const LIMIT = 10;
     let selectedWords: any[] = [];
 
+    // --- 核心修复：严格筛选逻辑 ---
     if (mode === 'recent') {
-      selectedWords = savedItems.slice(0, LIMIT);
-    } else {
-      const filtered = savedItems.filter((i: any) => 
-        (filters.lang === 'all' || i.entry.lang === filters.lang) &&
-        (filters.level === 'all' || i.entry.level === filters.level)
+      // 最近模式：也必须遵守当前的语言筛选，否则会出现中文词库里混入很久以前的英文词
+      // 如果你想完全无视筛选只看最近，可以把 filter 去掉。这里假设你要“在当前筛选下的最近”：
+      const validPool = savedItems.filter((i: any) => 
+        (filters.lang === 'all' || i.entry.lang === filters.lang)
       );
-      selectedWords = [...filtered].sort(() => 0.5 - Math.random()).slice(0, LIMIT);
+      selectedWords = validPool.slice(0, LIMIT);
+    } else {
+      // 随机模式：严格遵守 Filter
+      const validPool = savedItems.filter((i: any) => 
+        (filters.lang === 'all' || i.entry.lang === filters.lang) &&
+        (filters.level === 'all' || i.entry.level === filters.level) &&
+        (filters.theme === 'all' || i.entry.theme === filters.theme)
+      );
+      selectedWords = [...validPool].sort(() => 0.5 - Math.random()).slice(0, LIMIT);
     }
 
     if (selectedWords.length === 0) {
-      alert("Not enough words to generate story.");
+      alert(`当前筛选条件下单词不足 ${LIMIT} 个，无法生成。请尝试放宽筛选条件。`);
       setIsGenerating(false);
       return;
     }
 
-    const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
+    // 语种锁定：取第一个单词的语种作为 Story 语种，防止混乱
     const langCode = selectedWords[0]?.entry.lang || 'en';
     setCurrentStoryLang(langCode);
+    const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
 
     const prompt = `Write a creative short story (approx 150 words) using these keywords: [${wordsStr}]. 
-    Language: "${langCode}".
+    Strict Output Language: "${langCode}".
+    
     Return JSON:
     1. "target_story": Story in ${langCode}.
     2. "mixed_story": The SAME story translated into Chinese, BUT keep keywords [${wordsStr}] in original ${langCode}.`;
@@ -361,73 +368,64 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
   if (!isOpen) return null;
 
   return (
+    // 使用你给出的背景遮罩样式
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
           
-          {/* Header: 完全还原你原本的设计 */}
+          {/* Header: 你喜欢的原版设计 (bg-slate-50) */}
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900">
-                  <Sparkles size={20} className="text-purple-500"/> AI Memory Story
-              </h3>
+              <div className="flex items-center gap-4">
+                  <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900">
+                      <Sparkles size={20} className="text-purple-500"/> AI Memory Story
+                  </h3>
+                  
+                  {/* 小巧的 Tab 切换，放在 Header 里不占地方 */}
+                  <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
+                      <button onClick={() => setActiveTab('generate')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'generate' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>New</button>
+                      <button onClick={() => setActiveTab('history')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>History</button>
+                  </div>
+              </div>
               <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition-colors">
                   <X className="text-slate-500" size={20}/>
               </button>
           </div>
 
-          <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-white">
-              
-              {/* 功能切换条 (胶囊样式，极简) */}
-              <div className="flex justify-center mb-6">
-                  <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
-                      <button 
-                          onClick={() => setActiveTab('generate')} 
-                          className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'generate' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                          New Story
-                      </button>
-                      <button 
-                          onClick={() => setActiveTab('history')} 
-                          className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                          History ({history.length})
-                      </button>
-                  </div>
-              </div>
-
+          <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
               {activeTab === 'generate' ? (
                   <>
-                      {/* 操作按钮组: 正常大小，不夸张 */}
-                      {!storyContent && !isGenerating && (
-                          <div className="flex gap-3 mb-8 justify-center">
-                              <button onClick={() => generateStory('recent')} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-bold">
-                                  <Database size={16}/> Use Recent 10
+                      {/* 操作区 */}
+                      {!isGenerating && !storyContent && (
+                          <div className="flex gap-3 mb-6 justify-center">
+                              <button onClick={() => generateStory('recent')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                                  <Database size={14}/> Top 10 (Recent)
                               </button>
-                              <button onClick={() => generateStory('filtered')} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg hover:border-indigo-300 hover:text-indigo-600 transition-colors shadow-sm text-sm font-bold">
-                                  <Filter size={16}/> Random 10
+                              <button onClick={() => generateStory('filtered')} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:border-indigo-500 hover:text-indigo-600 transition-colors flex items-center gap-2">
+                                  <Filter size={14}/> Random 10 (Filtered)
                               </button>
                           </div>
                       )}
 
-                      {/* 内容展示区 */}
+                      {/* Loading */}
                       {isGenerating ? (
                           <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4">
                               <Loader2 className="animate-spin text-indigo-500" size={40}/>
-                              <p className="font-medium text-sm">Weaving your story...</p>
+                              <p className="font-medium">Weaving your story...</p>
                           </div>
                       ) : storyContent ? (
                           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                              {/* Target Language Card - 你的原版设计 */}
+                              
+                              {/* 1. Target Story - 你喜欢的 Prose 设计 */}
                               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                   <div className="flex justify-between items-center mb-4">
                                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div>
-                                      <TTSButton text={storyContent.target_story} lang={currentStoryLang} label="Listen" size={16}/>
+                                      <TTSButton text={storyContent.target_story} lang={currentStoryLang} label="Play" size={16}/>
                                   </div>
                                   <div className="prose prose-lg leading-loose text-slate-800 font-serif">
                                       {renderBoldText(storyContent.target_story)}
                                   </div>
                               </div>
 
-                              {/* Bilingual Guide Card - 你的原版设计 */}
+                              {/* 2. Bilingual Guide - 你喜欢的 Indigo 设计 */}
                               <div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100">
                                   <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div>
                                   <div className="leading-loose text-indigo-900 text-lg">
@@ -435,40 +433,30 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
                                   </div>
                               </div>
 
-                              {/* 重新生成按钮 */}
-                              <div className="flex justify-center pt-4">
-                                  <button onClick={() => setStoryContent(null)} className="text-slate-400 text-xs hover:text-indigo-600 underline">Generate Another</button>
+                              {/* 重置按钮 */}
+                              <div className="text-center pt-2">
+                                  <button onClick={() => setStoryContent(null)} className="text-slate-400 text-xs hover:text-indigo-600 underline">Create Another Story</button>
                               </div>
                           </div>
                       ) : (
-                          !isGenerating && <div className="text-center text-slate-400 mt-10">Select a mode above to generate a story.</div>
+                          <div className="text-center text-slate-300 py-10">Select a mode to start.</div>
                       )}
                   </>
               ) : (
-                  // 历史记录列表 - 保持简洁
+                  // 历史记录列表
                   <div className="space-y-3">
                       {history.map((h: any) => (
-                          <div 
-                              key={h.id} 
-                              onClick={() => handleLoadHistory(h)}
-                              className="group p-4 border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all cursor-pointer bg-slate-50/50 hover:bg-white"
-                          >
-                              <div className="flex justify-between items-start mb-2">
-                                  <div className="flex items-center gap-2">
-                                      <span className={`w-1.5 h-1.5 rounded-full ${h.mode === 'recent' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
-                                      <span className="text-xs text-slate-400 font-mono">{new Date(h.timestamp).toLocaleString()}</span>
+                          <div key={h.id} onClick={() => handleLoadHistory(h)} className="group p-4 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm cursor-pointer transition-all flex justify-between items-start">
+                              <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                      <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 rounded ${h.mode === 'recent' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>{h.mode}</span>
+                                      <span className="text-[10px] text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
                                   </div>
-                                  <button onClick={(e) => handleDelete(e, h.id)} className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Trash2 size={14}/>
-                                  </button>
+                                  <div className="text-sm text-slate-700 line-clamp-1 font-serif">{h.content.target_story}</div>
                               </div>
-                              <div className="text-sm text-slate-700 line-clamp-2 font-serif mb-2">{h.content.target_story}</div>
-                              <div className="flex flex-wrap gap-1">
-                                  {h.keywords.slice(0, 5).map((k: string) => (
-                                      <span key={k} className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 text-slate-500 rounded">{k}</span>
-                                  ))}
-                                  {h.keywords.length > 5 && <span className="text-[10px] text-slate-300">...</span>}
-                              </div>
+                              <button onClick={(e) => handleDelete(e, h.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Trash2 size={16}/>
+                              </button>
                           </div>
                       ))}
                   </div>
@@ -1765,21 +1753,7 @@ ${sentencesStr}
       </main>
 
       {/* Modals */}
-      {showStoryModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
-              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                      <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900"><Sparkles size={20} className="text-purple-500"/> AI Memory Story</h3>
-                      <button onClick={()=>setShowStoryModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
-                  </div>
-                  <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-                      {isGeneratingStory ? (<div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40}/><p className="font-medium">Weaving your story...</p></div>) : storyContent ? (
-                          <div className="space-y-6"><div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-4"><div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div><TTSButton text={storyContent.target_story} lang={entry?.lang || 'en'} label="Listen to Story" size={18}/></div><div className="prose prose-lg leading-loose text-slate-800">{renderBoldText(storyContent.target_story)}</div></div><div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100"><div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div><div className="leading-loose text-indigo-900 text-lg">{renderBoldText(storyContent.mixed_story)}</div></div></div>
-                      ) : <div className="text-center text-slate-400">Error loading story.</div>}
-                  </div>
-              </div>
-          </div>
-      )}
+      
       
       {showConjugationModal && entry?.conjugations && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
