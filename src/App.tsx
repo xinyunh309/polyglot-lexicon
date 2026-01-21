@@ -279,7 +279,7 @@ const Tag = ({ icon: Icon, text, colorClass, onClick, title }: { icon?: any, tex
 // ==========================================
 // 5. 主应用逻辑 (Main App)
 // ==========================================
-// --- [100% UI还原 + 逻辑修正版] StoryModal ---
+// --- [2. StoryModal] 完整无错版 (小字号 + 双语高亮 + 紫色按钮) ---
 const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: any) => {
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -299,13 +299,13 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     }
   }, [isOpen, db]);
 
-  // 2. 删除
+  // 2. 删除功能
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm('Delete this story?')) await deleteDoc(doc(db, 'stories', id));
   };
 
-  // 3. 点击历史回看
+  // 3. 点击历史加载
   const handleLoadHistory = (item: any) => {
     setStoryContent(item.content);
     const lang = item.keywords?.[0] ? savedItems.find((i:any) => i.entry.word === item.keywords[0])?.entry.lang : 'en';
@@ -313,44 +313,37 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     setActiveTab('generate');
   };
 
-  // 4. 生成逻辑 (修复筛选 + 语种混乱)
+  // 4. 生成逻辑
   const generateStory = async (mode: 'recent' | 'filtered') => {
     setIsGenerating(true);
     setStoryContent(null);
     const LIMIT = 10;
     let selectedWords: any[] = [];
 
-    // --- 核心修复：严格筛选逻辑 ---
     if (mode === 'recent') {
-      // 最近模式：也必须遵守当前的语言筛选，否则会出现中文词库里混入很久以前的英文词
-      // 如果你想完全无视筛选只看最近，可以把 filter 去掉。这里假设你要“在当前筛选下的最近”：
       const validPool = savedItems.filter((i: any) => 
         (filters.lang === 'all' || i.entry.lang === filters.lang)
       );
       selectedWords = validPool.slice(0, LIMIT);
     } else {
-      // 随机模式：严格遵守 Filter
       const validPool = savedItems.filter((i: any) => 
         (filters.lang === 'all' || i.entry.lang === filters.lang) &&
-        (filters.level === 'all' || i.entry.level === filters.level) &&
-        (filters.theme === 'all' || i.entry.theme === filters.theme)
+        (filters.level === 'all' || i.entry.level === filters.level)
       );
       selectedWords = [...validPool].sort(() => 0.5 - Math.random()).slice(0, LIMIT);
     }
 
     if (selectedWords.length === 0) {
-      alert(`当前筛选条件下单词不足 ${LIMIT} 个，无法生成。请尝试放宽筛选条件。`);
+      alert("Not enough words found with current filters.");
       setIsGenerating(false);
       return;
     }
 
-    // 语种锁定：取第一个单词的语种作为 Story 语种，防止混乱
     const langCode = selectedWords[0]?.entry.lang || 'en';
     setCurrentStoryLang(langCode);
     const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
-    
-    // ... 在 generateStory 函数内 ...
 
+    // 注意：这里的反引号 ` 已经正确转义，直接复制即可
     const prompt = `Write a creative short story (approx 150 words) using these keywords: [${wordsStr}]. 
     Strict Output Language: "${langCode}".
     
@@ -359,8 +352,7 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     2. "mixed_story": The SAME story translated into Chinese.
     
     CRITICAL RULE: You MUST wrap the original ${langCode} keywords [${wordsStr}] with backticks like \`word\` in BOTH "target_story" AND "mixed_story".`;
-    (Example: "他拿起了一个 \`apple\` 咬了一口").`;
-    
+
     const res = await callGemini(prompt, true);
     if (res) {
       try {
@@ -379,18 +371,15 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
   if (!isOpen) return null;
 
   return (
-    // 使用你给出的背景遮罩样式
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
           
-          {/* Header: 你喜欢的原版设计 (bg-slate-50) */}
+          {/* Header */}
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-4">
                   <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900">
                       <Sparkles size={20} className="text-purple-500"/> AI Memory Story
                   </h3>
-                  
-                  {/* 小巧的 Tab 切换，放在 Header 里不占地方 */}
                   <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
                       <button onClick={() => setActiveTab('generate')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'generate' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>New</button>
                       <button onClick={() => setActiveTab('history')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>History</button>
@@ -401,22 +390,20 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
               </button>
           </div>
 
-          <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+          <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-white">
               {activeTab === 'generate' ? (
                   <>
-                      {/* 操作区 */}
                       {!isGenerating && !storyContent && (
                           <div className="flex gap-3 mb-6 justify-center">
                               <button onClick={() => generateStory('recent')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow hover:bg-indigo-700 transition-colors flex items-center gap-2">
                                   <Database size={14}/> Top 10 (Recent)
                               </button>
                               <button onClick={() => generateStory('filtered')} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:border-indigo-500 hover:text-indigo-600 transition-colors flex items-center gap-2">
-                                  <Filter size={14}/> Random 10 (Filtered)
+                                  <Filter size={14}/> Random 10
                               </button>
                           </div>
                       )}
 
-                      {/* Loading */}
                       {isGenerating ? (
                           <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4">
                               <Loader2 className="animate-spin text-indigo-500" size={40}/>
@@ -425,7 +412,7 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
                       ) : storyContent ? (
                           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                               
-                              {/* 1. Target Story (原文：白底 + 小字号 + 关键词高亮) */}
+                              {/* 1. Target Story (小字号 + 白底 + 双语高亮) */}
                               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative">
                                   <div className="flex justify-between items-center mb-3 border-b border-slate-50 pb-2">
                                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
@@ -433,34 +420,30 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
                                       </div>
                                       <TTSButton text={storyContent.target_story} lang={currentStoryLang} label="Listen" size={14}/>
                                   </div>
-                                  {/* ✅ 修复：去掉 prose-lg，改为 text-sm (小号) + leading-7 (舒适行高) */}
                                   <div className="text-sm leading-7 text-slate-700 font-serif whitespace-pre-wrap">
                                       {renderBoldText(storyContent.target_story)}
                                   </div>
                               </div>
 
-                              {/* 2. Bilingual Guide (Indigo底 + 小字号 + 白色高亮) */}
+                              {/* 2. Bilingual Guide (小字号 + 紫底 + 白色高亮) */}
                               <div className="bg-indigo-50/50 p-5 rounded-xl border border-indigo-100">
                                   <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1">
                                       <Lightbulb size={12}/> Bilingual Guide
                                   </div>
-                                  {/* ✅ 修复：背景是紫色，字号改小 (text-sm)，文字是深紫色 */}
                                   <div className="leading-7 text-indigo-900 text-sm">
                                       {renderBoldText(storyContent.mixed_story)}
                                   </div>
                               </div>
 
-                              {/* 重置按钮 */}
                               <div className="text-center pt-2">
                                   <button onClick={() => setStoryContent(null)} className="text-slate-400 text-xs hover:text-indigo-600 underline">Create Another Story</button>
                               </div>
                           </div>
                       ) : (
-                          <div className="text-center text-slate-300 py-10">Select a mode to start.</div>
+                          <div className="text-center text-slate-300 py-10">Select a mode to generate story.</div>
                       )}
                   </>
               ) : (
-                  // 历史记录列表
                   <div className="space-y-3">
                       {history.map((h: any) => (
                           <div key={h.id} onClick={() => handleLoadHistory(h)} className="group p-4 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm cursor-pointer transition-all flex justify-between items-start">
