@@ -134,18 +134,15 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
   }
 };
 
+// --- [UI 优化] 渲染器：白色卡片底纹 + 精致阴影 ---
 const renderBoldText = (text: string) => {
   if (!text || typeof text !== 'string') return null;
-  // 同时匹配 **粗体** 和 `代码块` 两种格式
   const parts = text.split(/(\*\*.*?\*\*|`.*?`)/);
   return parts.map((part, index) => {
-    // 检查是否包含包裹符号
     if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('`') && part.endsWith('`'))) {
-      // 去除首尾符号
       const content = part.startsWith('**') ? part.slice(2, -2) : part.slice(1, -1);
-      // ✅ 修复：使用 indigo-100 底色 + 底部边框，还原“高亮底纹”效果
       return (
-        <span key={index} className="mx-1 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold border-b-2 border-indigo-200">
+        <span key={index} className="mx-1 px-1.5 py-0.5 rounded border border-slate-200 bg-white text-indigo-600 font-bold text-[90%] shadow-sm box-decoration-clone">
           {content}
         </span>
       );
@@ -436,10 +433,13 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
                                   </div>
                               </div>
 
-                              {/* 2. Bilingual Guide - 你喜欢的 Indigo 设计 */}
-                              <div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100">
-                                  <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div>
-                                  <div className="leading-loose text-indigo-900 text-lg">
+                              {/* 2. Bilingual Guide (Indigo底 + 小字号 + 白色高亮) */}
+                              <div className="bg-indigo-50/50 p-5 rounded-xl border border-indigo-100">
+                                  <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1">
+                                      <Lightbulb size={12}/> Bilingual Guide
+                                  </div>
+                                  {/* ✅ 修复：背景是紫色，字号改小 (text-sm)，文字是深紫色 */}
+                                  <div className="leading-7 text-indigo-900 text-sm">
                                       {renderBoldText(storyContent.mixed_story)}
                                   </div>
                               </div>
@@ -1620,10 +1620,13 @@ ${sentencesStr}
                             {isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} 
                             <span className="hidden md:inline">Cluster</span>
                         </button>
-                        {/* ✅ 修复：恢复紫色底色实心按钮，更醒目 */}
-                        <button onClick={() => setShowStoryModal(true)} className="flex-1 py-3 flex items-center justify-center gap-2 font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
-                          <Sparkles size={16} className="text-indigo-200"/> AI Story
-                        </button>
+                        <button 
+            onClick={() => setShowStoryModal(true)} 
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg"
+        >
+            <Sparkles size={16} className="text-indigo-200"/> 
+            <span>AI Story</span>
+        </button>
                     </div>
                 </div>
                 
