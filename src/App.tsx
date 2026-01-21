@@ -349,14 +349,17 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     setCurrentStoryLang(langCode);
     const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
     
+    // ... 在 generateStory 函数内 ...
+
     const prompt = `Write a creative short story (approx 150 words) using these keywords: [${wordsStr}]. 
     Strict Output Language: "${langCode}".
     
     Return JSON:
     1. "target_story": Story in ${langCode}.
-    2. "mixed_story": The SAME story translated into Chinese. 
-       CRITICAL RULE: You MUST wrap the original ${langCode} keywords [${wordsStr}] with backticks like \`word\`. 
-       (Example: "他拿起了一个 \`apple\` 咬了一口").`;
+    2. "mixed_story": The SAME story translated into Chinese.
+    
+    CRITICAL RULE: You MUST wrap the original ${langCode} keywords [${wordsStr}] with backticks like \`word\` in BOTH "target_story" AND "mixed_story".`;
+    (Example: "他拿起了一个 \`apple\` 咬了一口").`;
     
     const res = await callGemini(prompt, true);
     if (res) {
@@ -422,13 +425,16 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
                       ) : storyContent ? (
                           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                               
-                              {/* 1. Target Story - 你喜欢的 Prose 设计 */}
-                              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                  <div className="flex justify-between items-center mb-4">
-                                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div>
-                                      <TTSButton text={storyContent.target_story} lang={currentStoryLang} label="Play" size={16}/>
+                              {/* 1. Target Story (原文：白底 + 小字号 + 关键词高亮) */}
+                              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative">
+                                  <div className="flex justify-between items-center mb-3 border-b border-slate-50 pb-2">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                          <Globe size={12}/> Target Language
+                                      </div>
+                                      <TTSButton text={storyContent.target_story} lang={currentStoryLang} label="Listen" size={14}/>
                                   </div>
-                                  <div className="prose prose-lg leading-loose text-slate-800 font-serif">
+                                  {/* ✅ 修复：去掉 prose-lg，改为 text-sm (小号) + leading-7 (舒适行高) */}
+                                  <div className="text-sm leading-7 text-slate-700 font-serif whitespace-pre-wrap">
                                       {renderBoldText(storyContent.target_story)}
                                   </div>
                               </div>
