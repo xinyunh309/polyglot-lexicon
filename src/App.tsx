@@ -136,10 +136,19 @@ const pcmToWav = (base64PCM: string, sampleRate: number = 24000) => {
 
 const renderBoldText = (text: string) => {
   if (!text || typeof text !== 'string') return null;
-  const parts = text.split(/(\*\*.*?\*\*)/);
+  // 同时匹配 **粗体** 和 `代码块` 两种格式
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/);
   return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="text-indigo-700 bg-indigo-50 px-1 rounded font-bold font-serif mx-1">{part.slice(2, -2)}</strong>;
+    // 检查是否包含包裹符号
+    if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('`') && part.endsWith('`'))) {
+      // 去除首尾符号
+      const content = part.startsWith('**') ? part.slice(2, -2) : part.slice(1, -1);
+      // ✅ 修复：使用 indigo-100 底色 + 底部边框，还原“高亮底纹”效果
+      return (
+        <span key={index} className="mx-1 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold border-b-2 border-indigo-200">
+          {content}
+        </span>
+      );
     }
     return <span key={index}>{part}</span>;
   });
@@ -342,14 +351,16 @@ const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: an
     const langCode = selectedWords[0]?.entry.lang || 'en';
     setCurrentStoryLang(langCode);
     const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
-
+    
     const prompt = `Write a creative short story (approx 150 words) using these keywords: [${wordsStr}]. 
     Strict Output Language: "${langCode}".
     
     Return JSON:
     1. "target_story": Story in ${langCode}.
-    2. "mixed_story": The SAME story translated into Chinese, BUT keep keywords [${wordsStr}] in original ${langCode}.`;
-
+    2. "mixed_story": The SAME story translated into Chinese. 
+       CRITICAL RULE: You MUST wrap the original ${langCode} keywords [${wordsStr}] with backticks like \`word\`. 
+       (Example: "他拿起了一个 \`apple\` 咬了一口").`;
+    
     const res = await callGemini(prompt, true);
     if (res) {
       try {
@@ -1609,8 +1620,9 @@ ${sentencesStr}
                             {isClustering ? <Loader2 className="animate-spin" size={14}/> : <Wand2 size={14}/>} 
                             <span className="hidden md:inline">Cluster</span>
                         </button>
-                        <button onClick={() => setShowStoryModal(true)} className="flex-1 py-3 flex items-center justify-center gap-2 font-bold text-sm text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors">
-                          <Sparkles size={16}/> AI Story
+                        {/* ✅ 修复：恢复紫色底色实心按钮，更醒目 */}
+                        <button onClick={() => setShowStoryModal(true)} className="flex-1 py-3 flex items-center justify-center gap-2 font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
+                          <Sparkles size={16} className="text-indigo-200"/> AI Story
                         </button>
                     </div>
                 </div>
