@@ -13,8 +13,10 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
-import { addDoc, 
-  getFirestore, collection, doc, setDoc, onSnapshot, query, updateDoc, writeBatch, deleteDoc
+// 修改这一行
+import { 
+  getFirestore, collection, doc, setDoc, onSnapshot, query, updateDoc, writeBatch, deleteDoc, 
+  addDoc, orderBy // <--- 确保加上这两个
 } from 'firebase/firestore';
 
 // ==========================================
@@ -204,15 +206,6 @@ interface VocabEntry {
 interface ReviewItem {
   id: string; entry: VocabEntry; stage: number; nextReviewDate: number; lastReviewedDate: number; addedAt?: number; created_at: number; isArchived: boolean; 
 }
-// --- [New] Story History Type ---
-interface StoryHistoryItem {
-  id?: string;
-  timestamp: number;
-  content: StoryData;
-  keywords: string[];
-  mode: 'recent' | 'random_filtered';
-}
-
 interface StoryData { target_story: string; mixed_story: string; }
 interface ChatMessage { role: 'user' | 'ai'; text: string; timestamp: number; }
 
@@ -280,7 +273,115 @@ const Tag = ({ icon: Icon, text, colorClass, onClick, title }: { icon?: any, tex
 // ==========================================
 // 5. 主应用逻辑 (Main App)
 // ==========================================
+// --- [新增] StoryModal 组件 (放在 App 函数外部) ---
+const StoryModal = ({ isOpen, onClose, savedItems, filters, callGemini, db }: any) => {
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [storyContent, setStoryContent] = useState<StoryData | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
 
+  // 监听历史记录
+  useEffect(() => {
+    if (isOpen && db) {
+      const q = query(collection(db, 'stories'), orderBy('timestamp', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setHistory(docs);
+      });
+      return () => unsubscribe();
+    }
+  }, [isOpen, db]);
+
+  // 生成逻辑
+  const generateStory = async (mode: 'recent' | 'filtered') => {
+    setIsGenerating(true);
+    setStoryContent(null);
+    let selectedWords: any[] = [];
+
+    if (mode === 'recent') {
+      selectedWords = savedItems.slice(0, 5);
+    } else {
+      const filtered = savedItems.filter((i: any) => 
+        (filters.lang === 'all' || i.entry.lang === filters.lang) &&
+        (filters.level === 'all' || i.entry.level === filters.level)
+      );
+      selectedWords = [...filtered].sort(() => 0.5 - Math.random()).slice(0, 5);
+    }
+
+    if (selectedWords.length === 0) {
+      alert("单词不足，无法生成！");
+      setIsGenerating(false);
+      return;
+    }
+
+    const wordsStr = selectedWords.map(i => i.entry.word).join(', ');
+    const lang = selectedWords[0]?.entry.lang || 'en';
+    const prompt = `Write a creative short story (100-150 words) using: [${wordsStr}]. Language: ${lang}. 
+    Return JSON: { "target_story": "story in ${lang}", "mixed_story": "story with Chinese translations in brackets for keywords" }`;
+
+    const res = await callGemini(prompt, true);
+    if (res) {
+      try {
+        const data = JSON.parse(res);
+        setStoryContent(data);
+        if (db) {
+            await addDoc(collection(db, 'stories'), {
+                timestamp: Date.now(), content: data, keywords: selectedWords.map(i => i.entry.word), mode: mode
+            });
+        }
+      } catch (e) { console.error(e); }
+    }
+    setIsGenerating(false);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+        <div className="flex border-b bg-slate-50">
+          <button onClick={() => setActiveTab('generate')} className={`flex-1 py-3 font-bold ${activeTab === 'generate' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>✨ 生成故事</button>
+          <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 font-bold ${activeTab === 'history' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>📜 历史记录</button>
+          <button onClick={onClose} className="px-4 text-slate-400 hover:text-red-500"><X size={20}/></button>
+        </div>
+        <div className="p-6 overflow-y-auto flex-1">
+          {activeTab === 'generate' ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => generateStory('recent')} disabled={isGenerating} className="p-4 border-2 border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 text-indigo-700 font-bold">
+                  🔄 最近词库模式 <div className="text-[10px] font-normal text-slate-500">使用最新的 5 个单词</div>
+                </button>
+                <button onClick={() => generateStory('filtered')} disabled={isGenerating} className="p-4 border-2 border-dashed border-emerald-200 rounded-xl hover:bg-emerald-50 text-emerald-700 font-bold">
+                  🎲 随机筛选模式 <div className="text-[10px] font-normal text-slate-500">基于当前筛选列表随机</div>
+                </button>
+              </div>
+              {isGenerating && <div className="text-center text-indigo-500 py-4"><Loader2 className="animate-spin inline"/> 正在生成...</div>}
+              {storyContent && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 border rounded-xl italic">{renderBoldText(storyContent.target_story)}</div>
+                  <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-sm text-slate-600">{renderBoldText(storyContent.mixed_story)}</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {history.map((h: any) => (
+                <div key={h.id} className="p-3 border rounded-lg bg-slate-50">
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                    <span>{new Date(h.timestamp).toLocaleString()}</span>
+                    <span className="uppercase font-bold">{h.mode}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mb-2">关键词: {h.keywords.join(', ')}</div>
+                  <div className="text-sm italic line-clamp-2">{h.content.target_story}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 export default function App() {
   const [dbLoading, setDbLoading] = useState(true); 
   const [mainTab, setMainTab] = useState<'dictionary' | 'playground' | 'library' | 'review'>('dictionary'); 
@@ -1568,113 +1669,22 @@ ${sentencesStr}
       </main>
 
       {/* Modals */}
-      const StoryModal = ({ isOpen, onClose, savedItems, filters }: any) => {
-  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
-  const [history, setHistory] = useState<StoryHistoryItem[]>([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-
-  // 1. 获取历史记录
-  const fetchStoryHistory = async () => {
-    if (!db) return;
-    setIsHistoryLoading(true);
-    const q = query(collection(db, 'stories')); // 按需添加 orderBy('timestamp', 'desc')
-    // 这里简单实现直接 getDocs
-    onSnapshot(q, (snap) => {
-      const items: any[] = [];
-      snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-      setHistory(items.sort((a, b) => b.timestamp - a.timestamp));
-      setIsHistoryLoading(false);
-    });
-  };
-
-  useEffect(() => { if (isOpen) fetchStoryHistory(); }, [isOpen]);
-
-  // 2. 逻辑：生成 Story (带两种模式)
-  const generateNewStory = async (mode: 'recent' | 'random_filtered') => {
-    setIsGeneratingStory(true);
-    let wordsToUse: string[] = [];
-
-    if (mode === 'recent') {
-      // 模式 1：最近的 5 个词
-      wordsToUse = savedItems.slice(0, 5).map((i: any) => i.entry.word);
-    } else {
-      // 模式 2：根据当前 Library 过滤条件随机抽取 5 个
-      const filtered = savedItems.filter((i: any) => 
-        (filters.lang === 'all' || i.entry.lang === filters.lang) &&
-        (filters.level === 'all' || i.entry.level === filters.level)
-      );
-      wordsToUse = [...filtered].sort(() => 0.5 - Math.random()).slice(0, 5).map((i: any) => i.entry.word);
-    }
-
-    const prompt = `Use these words to write a story: [${wordsToUse.join(', ')}]. 
-                    Provide a "target_story" and a "mixed_story" (target language + Chinese). 
-                    Return as JSON.`;
-    
-    const result = await callGemini(prompt, true);
-    if (result) {
-      const storyData = JSON.parse(result);
-      setStoryContent(storyData);
-      // 保存到 Firebase
-      await addDoc(collection(db, 'stories'), {
-        timestamp: Date.now(),
-        content: storyData,
-        keywords: wordsToUse,
-        mode: mode
-      });
-    }
-    setIsGeneratingStory(false);
-  };
-
-  return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isOpen ? 'visible' : 'invisible'}`}>
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        
-        {/* Header Tabs */}
-        <div className="flex border-b">
-          <button onClick={() => setActiveTab('generate')} className={`flex-1 py-4 font-bold ${activeTab === 'generate' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>
-            <Sparkles size={18} className="inline mr-2"/> 新生成
-          </button>
-          <button onClick={() => setActiveTab('history')} className={`flex-1 py-4 font-bold ${activeTab === 'history' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>
-            <Clock size={18} className="inline mr-2"/> 历史记录
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto">
-          {activeTab === 'generate' ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => generateNewStory('recent')} className="p-4 border-2 border-dashed rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left">
-                  <div className="font-bold text-indigo-600">最近词库模式</div>
-                  <div className="text-xs text-slate-500">使用最近添加的 5 个单词</div>
-                </button>
-                <button onClick={() => generateNewStory('random_filtered')} className="p-4 border-2 border-dashed rounded-xl hover:border-emerald-400 hover:bg-emerald-50 transition-all text-left">
-                  <div className="font-bold text-emerald-600">随机筛选模式</div>
-                  <div className="text-xs text-slate-500">基于当前筛选条件随机抽取</div>
-                </button>
-              </div>
-              {/* 展示 Story 内容的逻辑保持不变 */}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {history.map((h) => (
-                <div key={h.id} className="p-3 border rounded-lg bg-slate-50">
-                  <div className="flex justify-between text-[10px] text-slate-400 mb-2">
-                    <span>{new Date(h.timestamp).toLocaleString()}</span>
-                    <span className="bg-slate-200 px-1 rounded uppercase">{h.mode}</span>
+      {showStoryModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                      <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-900"><Sparkles size={20} className="text-purple-500"/> AI Memory Story</h3>
+                      <button onClick={()=>setShowStoryModal(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X className="text-slate-500" size={20}/></button>
                   </div>
-                  <div className="text-xs font-bold text-slate-700 mb-1">关键词: {h.keywords.join(', ')}</div>
-                  <div className="text-sm line-clamp-2 italic text-slate-600">"{h.content.target_story}"</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
+                  <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+                      {isGeneratingStory ? (<div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40}/><p className="font-medium">Weaving your story...</p></div>) : storyContent ? (
+                          <div className="space-y-6"><div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-center mb-4"><div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Language</div><TTSButton text={storyContent.target_story} lang={entry?.lang || 'en'} label="Listen to Story" size={18}/></div><div className="prose prose-lg leading-loose text-slate-800">{renderBoldText(storyContent.target_story)}</div></div><div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100"><div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-4">Bilingual Guide</div><div className="leading-loose text-indigo-900 text-lg">{renderBoldText(storyContent.mixed_story)}</div></div></div>
+                      ) : <div className="text-center text-slate-400">Error loading story.</div>}
+                  </div>
+              </div>
+          </div>
+      )}
+      
       {showConjugationModal && entry?.conjugations && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
               <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -1722,7 +1732,14 @@ ${sentencesStr}
             </button>
         ))}
       </div>
-
+    <StoryModal 
+        isOpen={showStoryModal} 
+        onClose={() => setShowStoryModal(false)}
+        savedItems={savedItems}
+        filters={filters}
+        callGemini={callGemini}
+        db={db}
+      />
     </div>
   );
 }
