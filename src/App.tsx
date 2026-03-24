@@ -251,10 +251,10 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
           audioConfig: { audioEncoding: "MP3" }
         })
       });
-      if (!response.ok) return null;
+      if (!response.ok) { const err = await response.json().catch(() => ({})); console.error("☁️ Cloud TTS error:", response.status, JSON.stringify(err)); return null; }
       const data = await response.json();
       return data.audioContent ? `data:audio/mp3;base64,${data.audioContent}` : null;
-    } catch { return null; }
+    } catch (e) { console.error("☁️ Cloud TTS fetch error:", e); return null; }
   };
 
   const playGeminiGATTS = async (): Promise<string | null> => {
@@ -267,12 +267,12 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode } }
         })
       });
-      if (!response.ok) return null;
+      if (!response.ok) { const err = await response.json().catch(() => ({})); console.error("🔷 Gemini GA TTS error:", response.status, JSON.stringify(err)); return null; }
       const data = await response.json();
       const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (!audioData) return null;
       return pcmToWav(audioData);
-    } catch { return null; }
+    } catch (e) { console.error("🔷 Gemini GA TTS fetch error:", e); return null; }
   };
 
   // Languages where Gemini preview TTS is unreliable
@@ -900,10 +900,10 @@ ${sentencesStr}
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ input: { text: playgroundInput }, voice: { languageCode: langCode, name: voiceName, modelName: CLOUD_TTS_MODEL }, audioConfig: { audioEncoding: "MP3" } })
                   });
-                  if (!r.ok) return null;
+                  if (!r.ok) { const err = await r.json().catch(() => ({})); console.error("☁️ Playground Cloud TTS error:", r.status, JSON.stringify(err)); return null; }
                   const d = await r.json();
                   return d.audioContent ? `data:audio/mp3;base64,${d.audioContent}` : null;
-              } catch { return null; }
+              } catch (e) { console.error("☁️ Playground Cloud TTS fetch error:", e); return null; }
           };
 
           // Helper: try Gemini API with GA model name
@@ -913,7 +913,7 @@ ${sentencesStr}
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ contents: [{ parts: [{ text: playgroundInput }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } }, languageCode: langCode } } })
                   });
-                  if (!r.ok) return null;
+                  if (!r.ok) { const err = await r.json().catch(() => ({})); console.error("🔷 Playground Gemini GA error:", r.status, JSON.stringify(err)); return null; }
                   const d = await r.json();
                   const audioData = d.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
                   return audioData ? pcmToWav(audioData) : null;
