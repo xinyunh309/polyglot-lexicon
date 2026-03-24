@@ -27,8 +27,8 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Models Configuration
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
-const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-tts"; // Fast, simple TTS (Buttons)
-const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-tts"; // High Quality (Playground)
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons)
+const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground)
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -232,8 +232,18 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     audio.play();
   };
 
+  const playBrowserTTS = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
+    window.speechSynthesis.speak(u);
+  };
+
+  // Languages where Gemini TTS preview model is unreliable — use browser TTS instead
+  const BROWSER_TTS_LANGS = new Set(['vi']);
+
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
+    if (BROWSER_TTS_LANGS.has(lang)) { playBrowserTTS(); return; }
     const cacheKey = `${lang}:${text.substring(0, 50)}`;
     if (audioCache.has(cacheKey)) { playAudio(audioCache.get(cacheKey)!); return; }
 
@@ -260,10 +270,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       else throw new Error("WAV conversion failed");
     } catch (error) {
       console.warn("TTS Fallback:", error);
-      const u = new SpeechSynthesisUtterance(text);
-      const lConfig = LANGUAGES.find(la => la.code === lang);
-      u.lang = lConfig?.voiceCode || 'en-US';
-      window.speechSynthesis.speak(u);
+      playBrowserTTS();
     } finally {
       setIsLoading(false);
     }
@@ -831,6 +838,17 @@ ${sentencesStr}
           }
           return null;
       };
+
+      // Vietnamese: use browser TTS directly (Gemini preview model unreliable for Vietnamese)
+      const effectiveLang = playgroundLang !== 'auto' ? playgroundLang : (speechConfig.languageCode === 'vi-VN' ? 'vi' : null);
+      if (effectiveLang === 'vi') {
+          const u = new SpeechSynthesisUtterance(playgroundInput);
+          u.lang = 'vi-VN';
+          if (action === 'play') { window.speechSynthesis.speak(u); }
+          else { alert("Download is not supported for browser TTS. Use Play instead."); }
+          setIsProcessingAudio(false);
+          return;
+      }
 
       try {
           console.log("🚀 Requesting Pro TTS...");
