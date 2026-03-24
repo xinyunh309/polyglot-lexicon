@@ -29,7 +29,9 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
 const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons) - Gemini API
 const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground) - Gemini API
-const CLOUD_TTS_MODEL = "gemini-2.5-flash-tts"; // GA model via Cloud TTS API (reliable for all languages incl. Vietnamese)
+// Vietnamese Cloud TTS standard voices (no Vertex AI needed)
+const VI_TTS_VOICE_FEMALE = "vi-VN-Standard-A";
+const VI_TTS_VOICE_MALE = "vi-VN-Standard-B";
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -247,7 +249,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: { text },
-          voice: { languageCode: langCode, name: "Kore", modelName: CLOUD_TTS_MODEL },
+          voice: { languageCode: langCode, name: langCode === 'vi-VN' ? VI_TTS_VOICE_FEMALE : undefined },
           audioConfig: { audioEncoding: "MP3" }
         })
       });
@@ -260,7 +262,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
   const playGeminiGATTS = async (): Promise<string | null> => {
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${CLOUD_TTS_MODEL}:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text }] }],
@@ -898,7 +900,7 @@ ${sentencesStr}
               try {
                   const r = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ input: { text: playgroundInput }, voice: { languageCode: langCode, name: voiceName, modelName: CLOUD_TTS_MODEL }, audioConfig: { audioEncoding: "MP3" } })
+                      body: JSON.stringify({ input: { text: playgroundInput }, voice: { languageCode: langCode, name: ttsGender === 'female' ? VI_TTS_VOICE_FEMALE : VI_TTS_VOICE_MALE }, audioConfig: { audioEncoding: "MP3" } })
                   });
                   if (!r.ok) { const err = await r.json().catch(() => ({})); console.error("☁️ Playground Cloud TTS error:", r.status, JSON.stringify(err)); return null; }
                   const d = await r.json();
@@ -909,7 +911,7 @@ ${sentencesStr}
           // Helper: try Gemini API with GA model name
           const tryGeminiGA = async (): Promise<string | null> => {
               try {
-                  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${CLOUD_TTS_MODEL}:generateContent?key=${apiKey}`, {
+                  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ contents: [{ parts: [{ text: playgroundInput }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } }, languageCode: langCode } } })
                   });
