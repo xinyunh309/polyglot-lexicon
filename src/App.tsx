@@ -29,9 +29,6 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
 const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons) - Gemini API
 const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground) - Gemini API
-// Vietnamese Cloud TTS standard voices (no Vertex AI needed)
-const VI_TTS_VOICE_FEMALE = "vi-VN-Standard-A";
-const VI_TTS_VOICE_MALE = "vi-VN-Standard-B";
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -241,45 +238,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     window.speechSynthesis.speak(u);
   };
 
-  // Try Cloud TTS API (GA model), then Gemini API with GA model name, then Gemini preview
-  const playCloudTTS = async (): Promise<string | null> => {
-    const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
-    try {
-      const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { text },
-          voice: { languageCode: langCode, name: langCode === 'vi-VN' ? VI_TTS_VOICE_FEMALE : undefined },
-          audioConfig: { audioEncoding: "MP3" }
-        })
-      });
-      if (!response.ok) { const err = await response.json().catch(() => ({})); console.error("☁️ Cloud TTS error:", response.status, JSON.stringify(err)); return null; }
-      const data = await response.json();
-      return data.audioContent ? `data:audio/mp3;base64,${data.audioContent}` : null;
-    } catch (e) { console.error("☁️ Cloud TTS fetch error:", e); return null; }
-  };
-
-  const playGeminiGATTS = async (): Promise<string | null> => {
-    const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode } }
-        })
-      });
-      if (!response.ok) { const err = await response.json().catch(() => ({})); console.error("🔷 Gemini GA TTS error:", response.status, JSON.stringify(err)); return null; }
-      const data = await response.json();
-      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!audioData) return null;
-      return pcmToWav(audioData);
-    } catch (e) { console.error("🔷 Gemini GA TTS fetch error:", e); return null; }
-  };
-
-  // Languages where Gemini preview TTS is unreliable
-  const UNRELIABLE_TTS_LANGS = new Set(['vi']);
-
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
     const cacheKey = `${lang}:${text.substring(0, 50)}`;
@@ -288,18 +246,6 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     setIsLoading(true);
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
     try {
-      // For unreliable languages: try Cloud TTS (GA) → Gemini API (GA model) → browser TTS
-      if (UNRELIABLE_TTS_LANGS.has(lang)) {
-        const cloudUrl = await playCloudTTS();
-        if (cloudUrl) { audioCache.set(cacheKey, cloudUrl); playAudio(cloudUrl); return; }
-        console.warn("Cloud TTS unavailable, trying Gemini GA model...");
-        const gaUrl = await playGeminiGATTS();
-        if (gaUrl) { audioCache.set(cacheKey, gaUrl); playAudio(gaUrl); return; }
-        console.warn("Gemini GA model unavailable, using browser TTS");
-        playBrowserTTS();
-        return;
-      }
-
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -888,72 +834,6 @@ ${sentencesStr}
           }
           return null;
       };
-
-      // Vietnamese: try Cloud TTS (GA) → Gemini GA model → browser TTS
-      const effectiveLang = playgroundLang !== 'auto' ? playgroundLang : (speechConfig.languageCode === 'vi-VN' ? 'vi' : null);
-      if (effectiveLang === 'vi') {
-          const langCode = 'vi-VN';
-          const voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
-
-          // Helper: try Cloud TTS API
-          const tryCloudTTS = async (): Promise<string | null> => {
-              try {
-                  const r = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ input: { text: playgroundInput }, voice: { languageCode: langCode, name: ttsGender === 'female' ? VI_TTS_VOICE_FEMALE : VI_TTS_VOICE_MALE }, audioConfig: { audioEncoding: "MP3" } })
-                  });
-                  if (!r.ok) { const err = await r.json().catch(() => ({})); console.error("☁️ Playground Cloud TTS error:", r.status, JSON.stringify(err)); return null; }
-                  const d = await r.json();
-                  return d.audioContent ? `data:audio/mp3;base64,${d.audioContent}` : null;
-              } catch (e) { console.error("☁️ Playground Cloud TTS fetch error:", e); return null; }
-          };
-
-          // Helper: try Gemini API with GA model name
-          const tryGeminiGA = async (): Promise<string | null> => {
-              try {
-                  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ contents: [{ parts: [{ text: playgroundInput }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } }, languageCode: langCode } } })
-                  });
-                  if (!r.ok) { const err = await r.json().catch(() => ({})); console.error("🔷 Playground Gemini GA error:", r.status, JSON.stringify(err)); return null; }
-                  const d = await r.json();
-                  const audioData = d.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                  return audioData ? pcmToWav(audioData) : null;
-              } catch { return null; }
-          };
-
-          try {
-              let audioUrl = await tryCloudTTS();
-              if (!audioUrl) { console.warn("Cloud TTS unavailable, trying Gemini GA..."); audioUrl = await tryGeminiGA(); }
-              if (audioUrl) {
-                  if (action === 'play') { new Audio(audioUrl).play(); }
-                  else {
-                      const ext = audioUrl.startsWith('data:audio/mp3') ? 'mp3' : 'wav';
-                      const link = document.createElement('a');
-                      link.href = audioUrl;
-                      link.download = `polyglot_tts_${Date.now()}.${ext}`;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                  }
-              } else {
-                  // Final fallback: browser TTS
-                  console.warn("All Gemini TTS failed for Vietnamese, using browser TTS");
-                  const u = new SpeechSynthesisUtterance(playgroundInput);
-                  u.lang = langCode;
-                  if (action === 'play') { window.speechSynthesis.speak(u); }
-                  else { alert("Download not available — only browser TTS is working for Vietnamese. Try enabling Cloud Text-to-Speech API in your Google Cloud project for downloadable audio."); }
-              }
-          } catch (e) {
-              console.error("Vietnamese TTS error:", e);
-              const u = new SpeechSynthesisUtterance(playgroundInput);
-              u.lang = langCode;
-              window.speechSynthesis.speak(u);
-          } finally {
-              setIsProcessingAudio(false);
-          }
-          return;
-      }
 
       try {
           console.log("🚀 Requesting Pro TTS...");
