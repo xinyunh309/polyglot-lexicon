@@ -89,6 +89,7 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
+const LANG_NAMES: Record<string, string> = { en: 'English', zh: 'Chinese', ja: 'Japanese', ko: 'Korean', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', id: 'Indonesian', nl: 'Dutch', ru: 'Russian', ar: 'Arabic', el: 'Greek', sv: 'Swedish', tr: 'Turkish', vi: 'Vietnamese' };
 
 const getFlag = (langCode: string) => {
     if (!langCode || typeof langCode !== 'string') return '🌐';
@@ -246,6 +247,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                systemInstruction: { parts: [{ text: `Read the following text aloud in ${LANG_NAMES[lang] || 'the original language'}. Do not add any extra words.` }] },
                 contents: [{ parts: [{ text: text }] }],
                 generationConfig: {
                     responseModalities: ["AUDIO"],
@@ -824,6 +826,7 @@ ${sentencesStr}
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        ...(playgroundLang !== 'auto' ? { systemInstruction: { parts: [{ text: `Read the following text aloud in ${LANG_NAMES[playgroundLang] || 'the original language'}. Do not add any extra words.` }] } } : speechConfig.languageCode === 'vi-VN' ? { systemInstruction: { parts: [{ text: 'Read the following text aloud in Vietnamese. Do not add any extra words.' }] } } : {}),
                         contents: [{ parts: [{ text: playgroundInput }] }],
                         generationConfig: { responseModalities: ["AUDIO"], speechConfig: speechConfig }
                     }),
