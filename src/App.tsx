@@ -234,27 +234,33 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
 
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
-    const cacheKey = `${lang}:${text.substring(0, 50)}`; 
+    const cacheKey = `${lang}:${text.substring(0, 50)}`;
     if (audioCache.has(cacheKey)) { playAudio(audioCache.get(cacheKey)!); return; }
-    
+
     setIsLoading(true);
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
+    const maxRetries = 3;
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-              contents: [{ parts: [{ text: text }] }],
-              generationConfig: {
-                  responseModalities: ["AUDIO"],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
-              }
-          })
-        }
-      );
-      if (!response.ok) throw new Error("TTS failed");
-      const data = await response.json();
-      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!audioData) throw new Error("No audio data in response");
+      let audioData: string | undefined;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: text }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
+                }
+            })
+          }
+        );
+        if (!response.ok) throw new Error("TTS failed");
+        const data = await response.json();
+        audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (audioData) break;
+        if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      }
+      if (!audioData) throw new Error("No audio data after retries");
       const wavUrl = pcmToWav(audioData);
       if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
       else throw new Error("WAV conversion failed");
@@ -786,10 +792,14 @@ ${sentencesStr}
           speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
       }
 
-      // Add language code to help API correctly identify the language
+      // Add language code to help API correctly identify the language (prevents empty audio for Vietnamese etc.)
       if (playgroundLang !== 'auto') {
           const plLangCode = LANGUAGES.find(l => l.code === playgroundLang)?.voiceCode;
           if (plLangCode) speechConfig.languageCode = plLangCode;
+      } else {
+          // Auto-detect: check if text contains Vietnamese diacritics
+          const viPattern = /[\u00C0-\u00C3\u00C8-\u00CA\u00CC-\u00CD\u00D2-\u00D5\u00D9-\u00DA\u00DD\u00E0-\u00E3\u00E8-\u00EA\u00EC-\u00ED\u00F2-\u00F5\u00F9-\u00FA\u00FD\u0102-\u0103\u0110-\u0111\u0128-\u0129\u0168-\u0169\u01A0-\u01B0\u1EA0-\u1EF9]/;
+          if (viPattern.test(playgroundInput)) speechConfig.languageCode = 'vi-VN';
       }
 
       const processAudioData = (base64Audio: string) => {
@@ -806,53 +816,41 @@ ${sentencesStr}
           }
       };
 
+      const fetchTTSWithRetry = async (model: string, maxRetries: number = 2): Promise<string | null> => {
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+              const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: playgroundInput }] }],
+                        generationConfig: { responseModalities: ["AUDIO"], speechConfig: speechConfig }
+                    }),
+                }
+              );
+              if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
+              const data = await response.json();
+              const audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              if (audio) return audio;
+              if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          }
+          return null;
+      };
+
       try {
           console.log("🚀 Requesting Pro TTS...");
-          
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRO_TTS_MODEL}:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: playgroundInput }] }], 
-                    generationConfig: { 
-                        responseModalities: ["AUDIO"], 
-                        speechConfig: speechConfig 
-                    }
-                }),
-            }
-          );
-
-          if (!response.ok) throw new Error(`Pro TTS failed: ${response.status}`);
-          
-          const data = await response.json();
-          const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          const base64Audio = await fetchTTSWithRetry(GEMINI_PRO_TTS_MODEL, 2);
           if (base64Audio) {
               processAudioData(base64Audio);
               return;
           }
-          throw new Error("No audio data in Pro response");
+          throw new Error("No audio data in Pro response after retries");
 
       } catch (e) {
           console.warn("Falling back to Flash TTS...", e);
           try {
-              const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: playgroundInput }] }], 
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"], 
-                            speechConfig: speechConfig 
-                        }
-                    }),
-                }
-              );
-              if (!response.ok) throw new Error(`Flash TTS failed: ${response.status}`);
-              const data = await response.json();
-              const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              const base64Audio = await fetchTTSWithRetry(GEMINI_SIMPLE_TTS_MODEL, 3);
               if (base64Audio) { processAudioData(base64Audio); }
               else { alert("Audio generation failed on both models. Try again — this can be intermittent for some languages."); }
           } catch (e2) {
