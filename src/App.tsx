@@ -238,6 +238,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     if (audioCache.has(cacheKey)) { playAudio(audioCache.get(cacheKey)!); return; }
     
     setIsLoading(true);
+    const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -245,7 +246,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
               contents: [{ parts: [{ text: text }] }],
               generationConfig: {
                   responseModalities: ["AUDIO"],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
               }
           })
         }
@@ -783,6 +784,12 @@ ${sentencesStr}
           }
       } else {
           speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: singleVoiceName } } };
+      }
+
+      // Add language code to help API correctly identify the language
+      if (playgroundLang !== 'auto') {
+          const plLangCode = LANGUAGES.find(l => l.code === playgroundLang)?.voiceCode;
+          if (plLangCode) speechConfig.languageCode = plLangCode;
       }
 
       const processAudioData = (base64Audio: string) => {
