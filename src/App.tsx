@@ -27,8 +27,9 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Models Configuration
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
-const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons)
-const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground)
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons) - Gemini API
+const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground) - Gemini API
+const CLOUD_TTS_MODEL = "gemini-2.5-flash-tts"; // GA model via Cloud TTS API (reliable for all languages incl. Vietnamese)
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -232,24 +233,42 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     audio.play();
   };
 
-  const playBrowserTTS = () => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
-    window.speechSynthesis.speak(u);
+  // Cloud TTS API (GA model) — reliable for all languages including Vietnamese
+  const playCloudTTS = async (): Promise<string | null> => {
+    const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
+    const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: langCode, name: "Kore", modelName: CLOUD_TTS_MODEL },
+        audioConfig: { audioEncoding: "MP3" }
+      })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const audioContent = data.audioContent;
+    if (!audioContent) return null;
+    return `data:audio/mp3;base64,${audioContent}`;
   };
 
-  // Languages where Gemini TTS preview model is unreliable — use browser TTS instead
-  const BROWSER_TTS_LANGS = new Set(['vi']);
+  // Languages where Gemini preview TTS is unreliable — prefer Cloud TTS API (GA model)
+  const CLOUD_TTS_LANGS = new Set(['vi']);
 
   const playGeminiTTS = async () => {
     if (isPlaying || isLoading) return;
-    if (BROWSER_TTS_LANGS.has(lang)) { playBrowserTTS(); return; }
     const cacheKey = `${lang}:${text.substring(0, 50)}`;
     if (audioCache.has(cacheKey)) { playAudio(audioCache.get(cacheKey)!); return; }
 
     setIsLoading(true);
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
     try {
+      // For languages with unreliable Gemini preview TTS, use Cloud TTS API (GA model) first
+      if (CLOUD_TTS_LANGS.has(lang)) {
+        const cloudUrl = await playCloudTTS();
+        if (cloudUrl) { audioCache.set(cacheKey, cloudUrl); playAudio(cloudUrl); return; }
+        console.warn("Cloud TTS failed, trying Gemini API...");
+      }
+
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -269,8 +288,7 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
       if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
       else throw new Error("WAV conversion failed");
     } catch (error) {
-      console.warn("TTS Fallback:", error);
-      playBrowserTTS();
+      console.warn("TTS error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -839,14 +857,39 @@ ${sentencesStr}
           return null;
       };
 
-      // Vietnamese: use browser TTS directly (Gemini preview model unreliable for Vietnamese)
+      // Vietnamese: use Cloud TTS API (GA model) which reliably supports Vietnamese
       const effectiveLang = playgroundLang !== 'auto' ? playgroundLang : (speechConfig.languageCode === 'vi-VN' ? 'vi' : null);
       if (effectiveLang === 'vi') {
-          const u = new SpeechSynthesisUtterance(playgroundInput);
-          u.lang = 'vi-VN';
-          if (action === 'play') { window.speechSynthesis.speak(u); }
-          else { alert("Download is not supported for browser TTS. Use Play instead."); }
-          setIsProcessingAudio(false);
+          try {
+              const langCode = 'vi-VN';
+              const voiceName = ttsGender === 'female' ? 'Kore' : 'Fenrir';
+              const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      input: { text: playgroundInput },
+                      voice: { languageCode: langCode, name: voiceName, modelName: CLOUD_TTS_MODEL },
+                      audioConfig: { audioEncoding: "MP3" }
+                  })
+              });
+              if (!response.ok) throw new Error(`Cloud TTS failed: ${response.status}`);
+              const data = await response.json();
+              if (!data.audioContent) throw new Error("No audio content");
+              const audioUrl = `data:audio/mp3;base64,${data.audioContent}`;
+              if (action === 'play') { new Audio(audioUrl).play(); }
+              else {
+                  const link = document.createElement('a');
+                  link.href = audioUrl;
+                  link.download = `polyglot_tts_${Date.now()}.mp3`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+              }
+          } catch (e) {
+              console.error("Cloud TTS error for Vietnamese:", e);
+              alert("Cloud TTS failed. Make sure Cloud Text-to-Speech API is enabled in your Google Cloud project.");
+          } finally {
+              setIsProcessingAudio(false);
+          }
           return;
       }
 
