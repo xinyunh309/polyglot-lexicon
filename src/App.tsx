@@ -241,29 +241,30 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-              contents: [{ parts: [{ text: text }] }], 
-              generationConfig: { 
-                  responseModalities: ["AUDIO"], 
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } 
-              } 
+          body: JSON.stringify({
+              contents: [{ parts: [{ text: text }] }],
+              generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+              }
           })
         }
       );
       if (!response.ok) throw new Error("TTS failed");
       const data = await response.json();
       const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (audioData) {
-        const wavUrl = pcmToWav(audioData);
-        if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
-      }
+      if (!audioData) throw new Error("No audio data in response");
+      const wavUrl = pcmToWav(audioData);
+      if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
+      else throw new Error("WAV conversion failed");
     } catch (error) {
       console.warn("TTS Fallback:", error);
       const u = new SpeechSynthesisUtterance(text);
       const lConfig = LANGUAGES.find(la => la.code === lang);
       u.lang = lConfig?.voiceCode || 'en-US';
       window.speechSynthesis.speak(u);
-      setIsPlaying(false); setIsLoading(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -845,8 +846,8 @@ ${sentencesStr}
               if (!response.ok) throw new Error(`Flash TTS failed: ${response.status}`);
               const data = await response.json();
               const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              if (base64Audio) processAudioData(base64Audio);
-              else alert("Audio generation failed on both models.");
+              if (base64Audio) { processAudioData(base64Audio); }
+              else { alert("Audio generation failed on both models. Try again — this can be intermittent for some languages."); }
           } catch (e2) {
               console.error(e2);
               alert("TTS Service unavailable (Check Quota/Network).");
