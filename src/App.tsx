@@ -27,8 +27,8 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Models Configuration
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
-const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons)
-const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground) - adjusted for availability
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-tts"; // Fast, simple TTS (Buttons)
+const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-tts"; // High Quality (Playground)
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -239,28 +239,22 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
 
     setIsLoading(true);
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
-    const maxRetries = 3;
     try {
-      let audioData: string | undefined;
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: text }] }],
-                generationConfig: {
-                    responseModalities: ["AUDIO"],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
-                }
-            })
-          }
-        );
-        if (!response.ok) throw new Error("TTS failed");
-        const data = await response.json();
-        audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (audioData) break;
-        if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
-      }
-      if (!audioData) throw new Error("No audio data after retries");
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              contents: [{ parts: [{ text: text }] }],
+              generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
+              }
+          })
+        }
+      );
+      if (!response.ok) throw new Error("TTS failed");
+      const data = await response.json();
+      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!audioData) throw new Error("No audio data");
       const wavUrl = pcmToWav(audioData);
       if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
       else throw new Error("WAV conversion failed");
