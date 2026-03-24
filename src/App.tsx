@@ -89,7 +89,6 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
-const LANG_NAMES: Record<string, string> = { en: 'English', zh: 'Chinese', ja: 'Japanese', ko: 'Korean', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', id: 'Indonesian', nl: 'Dutch', ru: 'Russian', ar: 'Arabic', el: 'Greek', sv: 'Swedish', tr: 'Turkish', vi: 'Vietnamese' };
 
 const getFlag = (langCode: string) => {
     if (!langCode || typeof langCode !== 'string') return '🌐';
@@ -240,29 +239,22 @@ const TTSButton = ({ text, lang, size = 16, label, minimal = false }: { text: st
 
     setIsLoading(true);
     const langCode = LANGUAGES.find(la => la.code === lang)?.voiceCode || 'en-US';
-    const maxRetries = 3;
     try {
-      let audioData: string | undefined;
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: `Read the following text aloud in ${LANG_NAMES[lang] || 'the original language'}. Do not add any extra words.` }] },
-                contents: [{ parts: [{ text: text }] }],
-                generationConfig: {
-                    responseModalities: ["AUDIO"],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
-                }
-            })
-          }
-        );
-        if (!response.ok) throw new Error("TTS failed");
-        const data = await response.json();
-        audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (audioData) break;
-        if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
-      }
-      if (!audioData) throw new Error("No audio data after retries");
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SIMPLE_TTS_MODEL}:generateContent?key=${apiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              contents: [{ parts: [{ text: text }] }],
+              generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, languageCode: langCode }
+              }
+          })
+        }
+      );
+      if (!response.ok) throw new Error("TTS failed");
+      const data = await response.json();
+      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!audioData) throw new Error("No audio data");
       const wavUrl = pcmToWav(audioData);
       if (wavUrl) { audioCache.set(cacheKey, wavUrl); playAudio(wavUrl); }
       else throw new Error("WAV conversion failed");
@@ -826,7 +818,6 @@ ${sentencesStr}
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        ...(playgroundLang !== 'auto' ? { systemInstruction: { parts: [{ text: `Read the following text aloud in ${LANG_NAMES[playgroundLang] || 'the original language'}. Do not add any extra words.` }] } } : speechConfig.languageCode === 'vi-VN' ? { systemInstruction: { parts: [{ text: 'Read the following text aloud in Vietnamese. Do not add any extra words.' }] } } : {}),
                         contents: [{ parts: [{ text: playgroundInput }] }],
                         generationConfig: { responseModalities: ["AUDIO"], speechConfig: speechConfig }
                     }),
