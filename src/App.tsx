@@ -67,7 +67,7 @@ const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
 const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
-type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id' | 'nl' | 'ru' | 'ar' | 'el' | 'sv' | 'tr' | 'vi' ;
+type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id' | 'nl' | 'ru' | 'ar' | 'el' | 'sv' | 'tr' | 'vi' | 'pl' ;
 
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
   { code: 'en', label: 'EN', voiceCode: 'en-US', flag: '🇬🇧' },
@@ -86,6 +86,7 @@ const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: strin
   { code: 'sv', label: 'SV', voiceCode: 'sv-SE', flag: '🇸🇪' }, 
   { code: 'tr', label: 'TR', voiceCode: 'tr-TR', flag: '🇹🇷' },
   { code: 'vi', label: 'VI', voiceCode: 'vi-VN', flag: '🇻🇳' },
+  { code: 'pl', label: 'PL', voiceCode: 'pl-PL', flag: '🇵🇱' },
 ];
 
 const FLAGS: Record<string, string> = LANGUAGES.reduce((acc, lang) => ({ ...acc, [lang.code]: lang.flag }), {});
