@@ -1,8 +1,9 @@
 #!/bin/bash
 cd "$(dirname "$0")/.."
-export $(grep -v '^#' .env | xargs) 2>/dev/null
+[ -f .env ] && set -a && . ./.env && set +a
 
 REVIEW=$(node scripts/daily-review.mjs 2>/dev/null) || exit 0
+[ -z "$REVIEW" ] && exit 0
 
 REVIEW_ESCAPED=$(echo "$REVIEW" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
 
