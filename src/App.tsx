@@ -952,7 +952,7 @@ ${sentencesStr}
       "morphology": "string (CN, optional)",
       "idiom": "string (optional)",
       "idiomMeaning": "string (CN)",
-      "pronunciation": "string (IPA)"
+      "pronunciation": "string (IPA; Japanese: hiragana only; Chinese: pinyin)"
     }`;
 
     const prompt = inputMode === 'word' || overrideWord 
