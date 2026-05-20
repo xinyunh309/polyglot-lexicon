@@ -922,10 +922,10 @@ ${sentencesStr}
     4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja), Italian (it), English (en).
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
-    7. "pronunciation": MUST use International Phonetic Alphabet (IPA) inside brackets, e.g., /.../.
-    8. **IMPORTANT FOR JAPANESE/CHINESE**: 
-       - "word" field MUST use Kanji/Hanzi (e.g., '猫').
-       - "pronunciation" field MUST use Kana/Pinyin (e.g., 'ねこ').
+    7. "pronunciation": For most languages, use IPA inside slashes, e.g., /.../.
+    8. **EXCEPTION — JAPANESE**: "pronunciation" MUST be hiragana reading ONLY (e.g., '歩幅' → 'ほはば'). NO IPA, NO katakana, NO slashes. Just plain hiragana.
+       **EXCEPTION — CHINESE**: "pronunciation" MUST be pinyin with tones (e.g., '猫' → 'māo').
+       For both: "word" field MUST use Kanji/Hanzi.
     9. **Punctuation**: Use CHINESE Punctuation (，。；) for all Chinese text in meaning/translations.
     10. **Lemma**: If input is a conjugated verb or declined noun, the 'word' field MUST be the LEMMA (Infinitive/Singular). Fill 'morphology' with the analysis of the input form (e.g., "变位自: spaventano - 第三人称复数").
     11. **Conjugations (IMPORTANT)**: If it is a VERB, provide a DETAILED 'conjugations' array.
