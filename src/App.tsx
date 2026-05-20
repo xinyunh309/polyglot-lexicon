@@ -919,7 +919,7 @@ ${sentencesStr}
        - Sentence 1: "Common" - A common, conversational, or simple usage.
        - Sentence 2: "Advanced" - A literary, formal, or complex academic usage.
        - Structure: {"type": "Common" or "Advanced", "target": "...", "translation": "..."}
-    4. "crossRefs": List 3-4 semantic equivalents in: German (de), French (fr), Spanish (es), Japanese (ja), Italian (it), English (en).
+    4. "crossRefs": List 3-4 semantic equivalents in OTHER languages. MUST include Italian (it), French (fr), English (en), and pick from German (de), Spanish (es), Japanese (ja). Exclude the CURRENT target language from the list (e.g., if word is Italian, do NOT include an Italian crossRef).
     5. "level": CEFR Level (B1, B2, C1, C2).
     6. "theme": MUST be a broad, standardized category in CHINESE (e.g., 商业, 情感, 自然, 科技, 生活).
     7. "pronunciation": For most languages, use IPA inside slashes, e.g., /.../.
