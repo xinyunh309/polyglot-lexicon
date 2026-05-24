@@ -66,7 +66,7 @@ try {
 const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
-const INTERVALS = [1, 3, 5, 10, 20, 40, 60];
+const INTERVALS = [7, 21, 42, 90, 180, 270, 365, 548, 730];
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id' | 'nl' | 'ru' | 'ar' | 'el' | 'sv' | 'tr' | 'vi' | 'pl' ;
 
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
@@ -1174,8 +1174,8 @@ ${sentencesStr}
               nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
               nextDate = Date.now() + INTERVALS[nextStage] * 86400000;
           } else if (action === 'boost') {
-              nextStage = Math.min(item.stage + 1, INTERVALS.length - 1);
-              nextDate = Date.now() + 14 * 86400000; 
+              nextStage = Math.min(item.stage + 2, INTERVALS.length - 1);
+              nextDate = Date.now() + INTERVALS[nextStage] * 86400000;
           }
 
           await updateDoc(doc(db, 'vocabulary', item.id), { 
@@ -1317,7 +1317,13 @@ ${sentencesStr}
   const availablePos = useMemo(() => [...new Set(savedItems.map(i=>i.entry.pos))].sort(), [savedItems]);
   const availableThemes = useMemo(() => [...new Set(savedItems.map(i=>i.entry.theme))].sort(), [savedItems]);
 
-  const getNextIntervalLabel = (currentStage: number) => `${INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)]}d`;
+  const getNextIntervalLabel = (currentStage: number) => {
+    const days = INTERVALS[Math.min(currentStage + 1, INTERVALS.length - 1)];
+    if (days >= 365) return `${+(days / 365).toFixed(1)}y`;
+    if (days >= 30) return `${Math.round(days / 30)}mo`;
+    if (days >= 7) return `${Math.round(days / 7)}w`;
+    return `${days}d`;
+  };
 
   return (
     <div className="fixed inset-0 md:static md:min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col safe-p-b">
