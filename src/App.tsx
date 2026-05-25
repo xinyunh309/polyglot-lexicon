@@ -955,9 +955,33 @@ ${sentencesStr}
       "pronunciation": "string (IPA; Japanese: hiragana only; Chinese: pinyin)"
     }`;
 
-    const prompt = inputMode === 'word' || overrideWord 
-        ? systemPrompt 
-        : `Extract vocabulary from text. Return JSON ARRAY using schema: ${systemPrompt}. Text: "${target.substring(0, 2000)}"`;
+    const prompt = inputMode === 'word' || overrideWord
+        ? systemPrompt
+        : `You are a precise lexicographer API. Extract 5-10 interesting/advanced vocabulary words from the following text.
+
+    For EACH word, return a JSON object following this schema:
+    ${shouldUseAuto
+      ? `DETECT the language of each word. Set 'lang' to the ISO code.`
+      : `Target Language: ${targetLangLabel} (${targetLangCodeStr}).`}
+    User Language: Chinese (Simplified).
+
+    RULES per word:
+    - "word": the lemma form (infinitive/singular)
+    - "lang": ISO language code
+    - "meaning": direct Chinese translation keywords (NOT a sentence)
+    - "pos": part of speech in CHINESE
+    - "pronunciation": IPA (Japanese: hiragana only; Chinese: pinyin)
+    - "level": CEFR Level
+    - "theme": broad category in CHINESE
+    - "sentences": exactly 2 — one Common, one Advanced. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}
+    - "synonyms": 2-3 synonyms
+    - "antonyms": 1-2 antonyms
+    - "crossRefs": 3-4 equivalents in other languages, MUST include Italian, French, English
+    - "conjugations": if verb, provide detailed conjugation array
+    - Use CHINESE punctuation for all Chinese text.
+
+    Return a JSON ARRAY of these objects. Text to analyze:
+    "${target.substring(0, 3000)}"`;
     
     const result = await callGemini(prompt, true);
     setIsGenerating(false);
