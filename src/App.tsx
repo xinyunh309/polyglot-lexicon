@@ -977,7 +977,7 @@ ${sentencesStr}
     - "pronunciation": IPA (Japanese: hiragana only; Chinese: pinyin)
     - "level": CEFR Level
     - "theme": broad category in CHINESE
-    - "sentences": exactly 2. First from source text, second a new example. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}
+    - "sentences": exactly 2. First from source text, second a new example. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}. Sentences MUST be plain text — NO XML tags, NO HTML tags, NO markup of any kind.
     - "synonyms": 2-3 synonyms
     - "antonyms": 1-2 antonyms
     - "crossRefs": 3-4 equivalents in other languages, MUST include Italian, French, English
@@ -997,7 +997,7 @@ ${sentencesStr}
         
         const validEntries = entries.map((e: any) => ({ 
             ...e, 
-            sentences: Array.isArray(e.sentences) ? e.sentences : [], 
+            sentences: Array.isArray(e.sentences) ? e.sentences.map((s: any) => ({ ...s, target: s.target?.replace(/<[^>]*>/g, '') || '', translation: s.translation?.replace(/<[^>]*>/g, '') || '' })) : [],
             synonyms: Array.isArray(e.synonyms) ? e.synonyms : [], 
             antonyms: Array.isArray(e.antonyms) ? e.antonyms : [], 
             crossRefs: Array.isArray(e.crossRefs) ? e.crossRefs : [], 
