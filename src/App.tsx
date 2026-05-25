@@ -66,7 +66,7 @@ try {
 const audioCache = new Map<string, string>();
 const requestCache = new Map<string, string>(); 
 
-const INTERVALS = [7, 21, 42, 90, 180, 270, 365, 548, 730];
+const INTERVALS = [7, 14, 21, 42, 90, 180, 270, 365, 548, 730];
 type Language = 'de' | 'en' | 'fr' | 'es' | 'it' | 'ja' | 'zh' | 'ko' | 'id' | 'nl' | 'ru' | 'ar' | 'el' | 'sv' | 'tr' | 'vi' | 'pl' ;
 
 const LANGUAGES: { code: Language; label: string; voiceCode: string; flag: string }[] = [
