@@ -980,9 +980,11 @@ ${sentencesStr}
     - "sentences": exactly 2. First from source text, second a new example. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}. Sentences MUST be plain text — NO XML tags, NO HTML tags, NO markup of any kind.
     - "synonyms": 2-3 synonyms
     - "antonyms": 1-2 antonyms
-    - "crossRefs": 3-4 equivalents in other languages, MUST include Italian, French, English
+    - "crossRefs": 3-4 equivalents in OTHER languages. MUST include Italian (it), French (fr), English (en). Exclude the word's own language. Structure: [{"lang": "it", "word": "..."}, {"lang": "fr", "word": "..."}, {"lang": "en", "word": "..."}]
     - "conjugations": if verb, provide detailed conjugation array
     - Use CHINESE punctuation for all Chinese text.
+
+    EVERY object in the array MUST contain ALL these fields: word, lang, meaning, pos, pronunciation, level, theme, sentences, synonyms, antonyms, crossRefs. Do NOT omit any field.
 
     Return a JSON ARRAY of these objects. Source text:
     "${target.substring(0, 3000)}"`;
