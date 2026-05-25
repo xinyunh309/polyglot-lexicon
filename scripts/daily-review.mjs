@@ -22,7 +22,7 @@ const COUNT = parseInt(process.env.REVIEW_COUNT || '15');
 const MIN_FRENCH = parseInt(process.env.REVIEW_MIN_FRENCH || '6');
 // Spaced-repetition curve (days). Kept in sync with src/App.tsx INTERVALS.
 // stage advances by +1 on each scheduled-task mark (equivalent to web app's "remember" action).
-const INTERVALS = [7, 21, 42, 90, 180, 270, 365, 548, 730];
+const INTERVALS = [7, 14, 21, 42, 90, 180, 270, 365, 548, 730];
 
 // --- Anonymous sign-in via Identity Toolkit REST ---
 const signInRes = await fetch(
