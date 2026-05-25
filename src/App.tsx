@@ -903,8 +903,9 @@ ${sentencesStr}
     const targetLangLabel = targetLangObj?.label || "English";
     const targetLangCodeStr = targetLangObj?.code || "en";
 
-    const systemPrompt = `You are a precise lexicographer API. 
-    Role: Generate a STRICT JSON object for the word "${target}". 
+    const systemPrompt = `You are a precise lexicographer API.
+    Role: Generate a STRICT JSON object for the word or expression "${target}".
+    NOTE: The input may be a single word, a multi-word expression, or an idiomatic phrase (e.g., "le temps de", "in balia di", "d'ora in poi"). Treat it as a SINGLE lexical entry — do NOT split it into separate words.
       
     ${shouldUseAuto 
       ? `INSTRUCTION: DETECT the language of the input word "${target}". Set 'lang' to the detected ISO code (e.g., 'it' for Italian, 'es' for Spanish).` 
@@ -935,7 +936,7 @@ ${sentencesStr}
       
     JSON SCHEMA:
     {
-      "word": "Lemma of ${target}",
+      "word": "Lemma or expression (keep multi-word phrases intact)",
       "lang": "${shouldUseAuto ? "detected_code" : targetLangCodeStr}",
       "pos": "string (CN)",
       "meaning": "string (CN)",
@@ -957,31 +958,35 @@ ${sentencesStr}
 
     const prompt = inputMode === 'word' || overrideWord
         ? systemPrompt
-        : `You are a precise lexicographer API. Extract 5-10 interesting/advanced vocabulary words from the following text.
+        : `You are a precise lexicographer API. Analyze the following text and extract 5-10 of the most interesting vocabulary items.
 
-    For EACH word, return a JSON object following this schema:
+    **PRIORITY**: Focus on idiomatic expressions, multi-word phrases, and special usages (e.g., "le temps de" = 趁着/利用...的时间, "mettre de côté" = 搁置) over common single words. Single advanced words are also welcome.
+
+    **IMPORTANT**: For the "sentences" field, the FIRST sentence (type "Common") MUST be a relevant sentence taken directly from or closely adapted from the source text below, showing the word/phrase in its original context. The SECOND sentence (type "Advanced") should be a new example you create.
+
     ${shouldUseAuto
-      ? `DETECT the language of each word. Set 'lang' to the ISO code.`
+      ? `DETECT the language of each item. Set 'lang' to the ISO code.`
       : `Target Language: ${targetLangLabel} (${targetLangCodeStr}).`}
     User Language: Chinese (Simplified).
 
-    RULES per word:
-    - "word": the lemma form (infinitive/singular)
+    RULES per item:
+    - "word": the expression or lemma form
     - "lang": ISO language code
     - "meaning": direct Chinese translation keywords (NOT a sentence)
-    - "pos": part of speech in CHINESE
+    - "pos": part of speech in CHINESE (短语, 习语, 动词短语, etc. for multi-word items)
     - "pronunciation": IPA (Japanese: hiragana only; Chinese: pinyin)
     - "level": CEFR Level
     - "theme": broad category in CHINESE
-    - "sentences": exactly 2 — one Common, one Advanced. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}
+    - "sentences": exactly 2. First from source text, second a new example. Structure: {"type": "Common"|"Advanced", "target": "...", "translation": "..."}
     - "synonyms": 2-3 synonyms
     - "antonyms": 1-2 antonyms
     - "crossRefs": 3-4 equivalents in other languages, MUST include Italian, French, English
     - "conjugations": if verb, provide detailed conjugation array
     - Use CHINESE punctuation for all Chinese text.
 
-    Return a JSON ARRAY of these objects. Text to analyze:
+    Return a JSON ARRAY of these objects. Source text:
     "${target.substring(0, 3000)}"`;
+
     
     const result = await callGemini(prompt, true);
     setIsGenerating(false);
