@@ -1126,8 +1126,24 @@ ${sentencesStr}
       if (!entry) return;
       setIsEnriching(true);
       const hasSents = entry.sentences && entry.sentences.length > 0;
-      const task = hasSents ? `TASK: 1. Add 1 NEW "Advanced/Literary" sentence. 2. Add Synonyms/CrossRefs. 3. DO NOT delete existing.` : `TASK: Add 2 sentences, synonyms, cross-refs.`;
-      const result = await callGemini(`ENRICH "${entry.word}". Current: ${JSON.stringify(entry)} ${task} Return FULL JSON.`, true);
+      const hasCrossRefs = entry.crossRefs && entry.crossRefs.length > 0;
+      const tasks = [];
+      if (hasSents) tasks.push('Add 1 NEW "Advanced/Literary" sentence.');
+      else tasks.push('Add 2 sentences (1 Common, 1 Advanced).');
+      if (!hasCrossRefs) tasks.push('Add crossRefs: 3-4 equivalents in OTHER languages. MUST include Italian (it), French (fr), English (en). Structure: [{"lang": "it", "word": "..."}, ...]');
+      tasks.push('Add synonyms/antonyms if missing. DO NOT delete existing data.');
+      const prompt = `You are a lexicographer API. ENRICH this vocabulary entry.
+Word: "${entry.word}" (${entry.lang})
+Current data: ${JSON.stringify(entry)}
+
+TASKS: ${tasks.join(' ')}
+
+RULES:
+- ALL translations and meanings MUST be in Chinese (Simplified). The "translation" field in sentences MUST be Chinese, NOT the target language.
+- Sentences structure: {"type": "Common"|"Advanced", "target": "sentence in ${entry.lang}", "translation": "中文翻译"}
+- crossRefs: equivalents in OTHER languages (exclude ${entry.lang}). MUST include Italian, French, English.
+- Return the FULL JSON object with all fields preserved.`;
+      const result = await callGemini(prompt, true);
       setIsEnriching(false);
       if (result) {
           try {
@@ -1135,9 +1151,10 @@ ${sentencesStr}
               let newSents = entry.sentences || [];
               if (enriched.sentences) {
                   const existT = new Set(newSents.map(s => s.target));
-                  newSents = [...newSents, ...enriched.sentences.filter((s: any) => !existT.has(s.target))];
+                  newSents = [...newSents, ...enriched.sentences.filter((s: any) => !existT.has(s.target)).map((s: any) => ({ ...s, target: s.target?.replace(/<[^>]*>/g, '') || '', translation: s.translation?.replace(/<[^>]*>/g, '') || '' }))];
               }
-              const merged = { ...entry, ...enriched, sentences: newSents, crossRefs: enriched.crossRefs || entry.crossRefs, pos: formatPOS(enriched.pos || entry.pos) };
+              const mergedCrossRefs = (enriched.crossRefs && enriched.crossRefs.length > 0) ? enriched.crossRefs : entry.crossRefs;
+              const merged = { ...entry, ...enriched, sentences: newSents, crossRefs: mergedCrossRefs || [], pos: formatPOS(enriched.pos || entry.pos) };
               setEntry(merged);
               const newGen = [...generatedEntries]; newGen[generatedIndex] = merged; setGeneratedEntries(newGen);
               if (isCurrentSaved) { await updateDoc(doc(db, 'vocabulary', isCurrentSaved.id), { entry: sanitizeData(merged) }); alert("Updated!"); }
