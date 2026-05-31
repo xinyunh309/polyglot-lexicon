@@ -1132,17 +1132,22 @@ ${sentencesStr}
       else tasks.push('Add 2 sentences (1 Common, 1 Advanced).');
       if (!hasCrossRefs) tasks.push('Add crossRefs: 3-4 equivalents in OTHER languages. MUST include Italian (it), French (fr), English (en). Structure: [{"lang": "it", "word": "..."}, ...]');
       tasks.push('Add synonyms/antonyms if missing. DO NOT delete existing data.');
-      const prompt = `You are a lexicographer API. ENRICH this vocabulary entry.
+      const prompt = `You are a lexicographer API. Return a JSON object.
+
+ENRICH this vocabulary entry:
 Word: "${entry.word}" (${entry.lang})
 Current data: ${JSON.stringify(entry)}
 
 TASKS: ${tasks.join(' ')}
 
-RULES:
-- ALL translations and meanings MUST be in Chinese (Simplified). The "translation" field in sentences MUST be Chinese, NOT the target language.
-- Sentences structure: {"type": "Common"|"Advanced", "target": "sentence in ${entry.lang}", "translation": "中文翻译"}
-- crossRefs: equivalents in OTHER languages (exclude ${entry.lang}). MUST include Italian, French, English.
-- Return the FULL JSON object with all fields preserved.`;
+CRITICAL RULES:
+1. The "translation" field in every sentence MUST be in 简体中文 (Simplified Chinese). NEVER use English or any other language for translations.
+   CORRECT example: {"target": "Je prends le temps de lire.", "translation": "我花时间阅读。", "type": "Common"}
+   WRONG example: {"target": "Je prends le temps de lire.", "translation": "I take time to read.", "type": "Common"}
+2. The "meaning" field MUST also be in 简体中文.
+3. Sentences: "target" is in ${entry.lang}, "translation" is in 简体中文. No exceptions.
+4. crossRefs: equivalents in OTHER languages (not ${entry.lang}). Must include Italian, French, English.
+5. Return the FULL JSON object with all original fields preserved. Do not remove any existing data.`;
       const result = await callGemini(prompt, true);
       setIsEnriching(false);
       if (result) {
