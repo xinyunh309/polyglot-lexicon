@@ -196,8 +196,9 @@ interface VocabEntry {
   pronunciation?: string; 
   pos: string; 
   gender?: string; 
-  meaning: string; 
-  level: string; 
+  meaning: string;
+  etymology?: string;
+  level: string;
   theme: string; 
   morphology?: string; 
   originalInput?: string; 
@@ -933,6 +934,10 @@ ${sentencesStr}
        - Include Indicative: Present, Imperfect, Future, Compound Past (e.g., Passato Prossimo), Remote/Simple Past (e.g., Passato Remoto).
        - Include: Subjunctive (Present, Imperfect), Conditional, Imperative.
        - Include: Participles (Present & Past) grouped under a single "Participles" section.
+    12. **Etymology**: ONE short line in etymological-dictionary notation. Symbols: "<" = derived from, "→" = evolved into (max 3 steps), "+" = compound parts. Language abbreviations: Lat. VLat. MedLat. Gr. OFr. MFr. OE ME OHG MHG ON OCS PGmc. PSlav. PIE Ar. Pers. Skt. MCh. Du. It. Sp. Fr. Ger. Eng. Glosses in Chinese inside （）.
+       - Include ONLY when genuinely informative: loanwords; analyzable Greek/Latin roots; compounds (list parts with "+"; add a literal gloss ONLY if the parts are NOT self-evident); Japanese/Korean/Vietnamese Sino-xenic words (give Hanzi origin, e.g. "漢語「電話」< MCh."); native words with analyzable structure (e.g. "和語 ma（目）+ to（門），「眼睛的门」"); or notable semantic shifts (e.g. "< Lat. salarium（盐钱，士兵买盐的津贴）").
+       - Return "" (empty) for plain native basic words with no story. NEVER invent an etymology; if uncertain, return "".
+       - Examples: "< Lat. tempus（时间）→ OFr. tens" / "< Gr. dêmos（人民）+ krátos（权力）" / "Hand + Schuh，日耳曼语合成词"
       
     JSON SCHEMA:
     {
@@ -940,6 +945,7 @@ ${sentencesStr}
       "lang": "${shouldUseAuto ? "detected_code" : targetLangCodeStr}",
       "pos": "string (CN)",
       "meaning": "string (CN)",
+      "etymology": "string (dictionary notation per Rule 12, or empty)",
       "level": "string",
       "theme": "string (CN)",
       "sentences": [
@@ -973,6 +979,7 @@ ${sentencesStr}
     - "word": the expression or lemma form
     - "lang": ISO language code
     - "meaning": direct Chinese translation keywords (NOT a sentence)
+    - "etymology": ONE short line, dictionary notation ("<" = from, "→" = evolved, "+" = compound; abbrev. Lat. Gr. OFr. PGmc. MCh. etc.; Chinese glosses in （）). ONLY for loanwords, analyzable roots, compounds, or Sino-xenic words. Empty string for plain native words. Never invent.
     - "pos": part of speech in CHINESE (短语, 习语, 动词短语, etc. for multi-word items)
     - "pronunciation": IPA (Japanese: hiragana only; Chinese: pinyin)
     - "level": CEFR Level
@@ -984,7 +991,7 @@ ${sentencesStr}
     - "conjugations": if verb, provide detailed conjugation array
     - Use CHINESE punctuation for all Chinese text.
 
-    EVERY object in the array MUST contain ALL these fields: word, lang, meaning, pos, pronunciation, level, theme, sentences, synonyms, antonyms, crossRefs. Do NOT omit any field.
+    EVERY object in the array MUST contain ALL these fields: word, lang, meaning, etymology, pos, pronunciation, level, theme, sentences, synonyms, antonyms, crossRefs. Do NOT omit any field (etymology may be an empty string).
 
     Return a JSON ARRAY of these objects. Source text:
     "${target.substring(0, 3000)}"`;
@@ -1131,6 +1138,7 @@ ${sentencesStr}
       if (hasSents) tasks.push('Add 1 NEW "Advanced/Literary" sentence.');
       else tasks.push('Add 2 sentences (1 Common, 1 Advanced).');
       if (!hasCrossRefs) tasks.push('Add crossRefs: 3-4 equivalents in OTHER languages. MUST include Italian (it), French (fr), English (en). Structure: [{"lang": "it", "word": "..."}, ...]');
+      if (!entry.etymology) tasks.push('Add "etymology": ONE short line, dictionary notation ("<" = from, "→" = evolved, "+" = compound; abbrev. Lat. Gr. OFr. PGmc. MCh. etc.; Chinese glosses in （）). ONLY if genuinely informative (loanword, analyzable roots, compound, Sino-xenic word); empty string for plain native words. Never invent.');
       tasks.push('Add synonyms/antonyms if missing. DO NOT delete existing data.');
       const prompt = `You are a lexicographer API. Return a JSON object.
 
@@ -1176,7 +1184,7 @@ CRITICAL RULES:
     setSaveStatus('saved'); 
     
     if (exist) {
-      const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs] };
+      const merged = { ...exist.entry, sentences: [...exist.entry.sentences, ...entry.sentences], synonyms: [...new Set([...exist.entry.synonyms, ...entry.synonyms])], crossRefs: [...exist.entry.crossRefs, ...entry.crossRefs], etymology: exist.entry.etymology || entry.etymology };
       await updateDoc(doc(db, 'vocabulary', exist.id), { entry: sanitizeData(merged), created_at: now }); 
     } else {
       const newItem = { id: crypto.randomUUID(), entry: { ...entry, word: wordToSave }, stage: 0, nextReviewDate: now, lastReviewedDate: now, created_at: now, addedAt: now, isArchived: false };
@@ -1535,7 +1543,10 @@ CRITICAL RULES:
 
                         <div className="p-4 md:p-10 space-y-6 md:space-y-8">
                              {generatedImage && (<div className="rounded-xl overflow-hidden bg-slate-100 border border-slate-200 mb-4 animate-in fade-in zoom-in-95"><img src={generatedImage} alt="Visual Mnemonic" className="w-full h-48 md:h-64 object-cover"/></div>)}
-                             <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
+                             <div>
+                                 <div className="text-lg md:text-2xl text-slate-800 font-medium leading-relaxed border-l-4 border-indigo-400 pl-4 md:pl-6 py-1 break-words">{entry.meaning}</div>
+                                 {entry.etymology && (<div className="mt-2 pl-4 md:pl-6 text-xs md:text-sm text-slate-400 italic break-words">📜 {entry.etymology}</div>)}
+                             </div>
                              {entry.idiom && (<div className="bg-amber-50/80 p-4 md:p-5 rounded-xl border border-amber-100/80 text-amber-900 relative overflow-hidden"><div className="absolute top-0 right-0 p-2 opacity-10"><Flame size={80}/></div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 mb-2"><Flame size={12}/> Idiom</div><div className="text-lg md:text-xl font-serif font-bold mb-1 relative z-10">{entry.idiom}</div><div className="text-sm md:text-base opacity-80 relative z-10">{entry.idiomMeaning}</div></div>)}
                              <div className="space-y-3 md:space-y-4">{(entry?.sentences || []).map((s, i) => (<div key={i} className="group p-3 md:p-4 rounded-xl border border-transparent hover:bg-slate-50 hover:border-slate-100 transition-all"><div className="flex justify-between items-start gap-4"><div className="text-base md:text-lg text-slate-800 leading-relaxed font-medium break-words">{s.type && <span className="text-[10px] font-bold text-indigo-400 uppercase mr-2 bg-indigo-50 px-1.5 py-0.5 rounded align-middle">{s.type}</span>}{s.target}</div><div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><TTSButton text={s.target} lang={entry.lang} minimal size={18}/></div></div><div className="text-slate-500 mt-1 md:mt-2 pl-1 text-sm md:text-base">{s.translation}</div></div>))}</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 pt-6 md:pt-8 border-t border-slate-100">
