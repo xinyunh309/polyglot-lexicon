@@ -726,15 +726,12 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
-      // [fast] audio tag (Gemini 3.1 TTS): in dialogue mode the tag must sit inside each
-      // speaker's line to apply to that speaker; otherwise one tag at the start covers all.
+      // Fast mode: a leading style instruction (Gemini 3.1 "director's note") gives a
+      // natural native pace — the [fast] audio tag over-accelerates and sounds robotic.
       const ttsText = ttsSpeed === 'fast'
           ? (isDialogue
-              ? playgroundInput.split('\n').map(line => {
-                  const m = line.match(/^([^:：]+[:：])\s*(.*)$/);
-                  return m ? `${m[1]} [fast] ${m[2]}` : line;
-                }).join('\n')
-              : `[fast] ${playgroundInput}`)
+              ? `Read the following conversation at the pace of fluent native speakers — natural and flowing, the way locals actually talk, without rushing:\n\n${playgroundInput}`
+              : `Read the following at the pace of a fluent native speaker — natural and flowing, the way locals actually read aloud, without rushing:\n\n${playgroundInput}`)
           : playgroundInput;
 
       const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
