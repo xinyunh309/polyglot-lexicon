@@ -525,7 +525,7 @@ export default function App() {
     
   // Playground Audio
   const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
-  const [ttsSpeed, setTtsSpeed] = useState<'normal' | 'fast'>('normal');
+  const [ttsSpeed, setTtsSpeed] = useState<number>(1);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   const playgroundEndRef = useRef<HTMLDivElement>(null);
@@ -726,13 +726,8 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
-      // Fast mode: a leading style instruction (Gemini 3.1 "director's note") gives a
-      // natural native pace — the [fast] audio tag over-accelerates and sounds robotic.
-      const ttsText = ttsSpeed === 'fast'
-          ? (isDialogue
-              ? `Read the following conversation at the pace of fluent native speakers — natural and flowing, the way locals actually talk, without rushing:\n\n${playgroundInput}`
-              : `Read the following at the pace of a fluent native speaker — natural and flowing, the way locals actually read aloud, without rushing:\n\n${playgroundInput}`)
-          : playgroundInput;
+      // Speed is applied at playback time via playbackRate (pitch-preserving) — prompt-based
+      // pacing control ([fast] tags, style instructions) proved wildly unpredictable.
 
       const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
           const lower = name.toLowerCase().trim();
@@ -813,7 +808,10 @@ ${sentencesStr}
       const processAudioData = (base64Audio: string) => {
           const wavUrl = pcmToWav(base64Audio);
           if (action === 'play') {
-              new Audio(wavUrl).play();
+              const audio = new Audio(wavUrl);
+              audio.playbackRate = ttsSpeed;
+              (audio as any).preservesPitch = true;
+              audio.play();
           } else {
               const link = document.createElement('a');
               link.href = wavUrl;
@@ -832,7 +830,7 @@ ${sentencesStr}
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: ttsText }] }],
+                        contents: [{ parts: [{ text: playgroundInput }] }],
                         generationConfig: { responseModalities: ["AUDIO"], speechConfig: speechConfig }
                     }),
                 }
@@ -1648,8 +1646,9 @@ CRITICAL RULES:
                             <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={10}/> Dialogue</button>
                         </div>
                         <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
-                            <button onClick={()=>setTtsSpeed('normal')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${ttsSpeed==='normal'?'bg-slate-100 text-slate-600':'text-slate-400 hover:bg-slate-50'}`}>1x</button>
-                            <button onClick={()=>setTtsSpeed('fast')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${ttsSpeed==='fast'?'bg-amber-100 text-amber-600':'text-slate-400 hover:bg-slate-50'}`}>⚡ Fast</button>
+                            {[1, 1.25, 1.5].map(speed => (
+                                <button key={speed} onClick={()=>setTtsSpeed(speed)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${ttsSpeed===speed?'bg-amber-100 text-amber-600':'text-slate-400 hover:bg-slate-50'}`}>{speed}x</button>
+                            ))}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                             <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-[10px] font-bold" title="Play"><Volume2 size={12}/> Play</button>
