@@ -27,8 +27,8 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Models Configuration
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash"; // Text Generation
-const GEMINI_SIMPLE_TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Fast, simple TTS (Buttons) - Gemini API
-const GEMINI_PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts"; // High Quality (Playground) - Gemini API
+const GEMINI_SIMPLE_TTS_MODEL = "gemini-3.1-flash-tts-preview"; // Simple TTS (Buttons) - Gemini API
+const GEMINI_PRO_TTS_MODEL = "gemini-3.1-flash-tts-preview"; // Playground TTS - supports [fast]/[slow] audio tags
 const IMAGEN_MODEL = "imagen-4.0-generate-001"; 
 
 const userFirebaseConfig = {
@@ -525,6 +525,7 @@ export default function App() {
     
   // Playground Audio
   const [ttsGender, setTtsGender] = useState<'female' | 'male' | 'dialogue'>('female');
+  const [ttsSpeed, setTtsSpeed] = useState<'normal' | 'fast'>('normal');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   const playgroundEndRef = useRef<HTMLDivElement>(null);
@@ -725,6 +726,17 @@ ${sentencesStr}
       const isDialogue = ttsGender === 'dialogue';
       const singleVoiceName = ttsGender === 'female' ? "Kore" : "Fenrir";
 
+      // [fast] audio tag (Gemini 3.1 TTS): in dialogue mode the tag must sit inside each
+      // speaker's line to apply to that speaker; otherwise one tag at the start covers all.
+      const ttsText = ttsSpeed === 'fast'
+          ? (isDialogue
+              ? playgroundInput.split('\n').map(line => {
+                  const m = line.match(/^([^:：]+[:：])\s*(.*)$/);
+                  return m ? `${m[1]} [fast] ${m[2]}` : line;
+                }).join('\n')
+              : `[fast] ${playgroundInput}`)
+          : playgroundInput;
+
       const getVoiceForName = (name: string, assignedVoices: Set<string>): string => {
           const lower = name.toLowerCase().trim();
           const MALE_VOICES = ['Fenrir', 'Puck', 'Charon'];
@@ -823,7 +835,7 @@ ${sentencesStr}
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: playgroundInput }] }],
+                        contents: [{ parts: [{ text: ttsText }] }],
                         generationConfig: { responseModalities: ["AUDIO"], speechConfig: speechConfig }
                     }),
                 }
@@ -1637,6 +1649,10 @@ CRITICAL RULES:
                             <button onClick={()=>setTtsGender('female')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='female'?'bg-rose-100 text-rose-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> F</button>
                             <button onClick={()=>setTtsGender('male')} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='male'?'bg-blue-100 text-blue-600':'text-slate-400 hover:bg-slate-50'}`}><User size={10}/> M</button>
                             <button onClick={()=>setTtsGender('dialogue' as any)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all ${ttsGender==='dialogue'?'bg-indigo-100 text-indigo-600':'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={10}/> Dialogue</button>
+                        </div>
+                        <div className="flex bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
+                            <button onClick={()=>setTtsSpeed('normal')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${ttsSpeed==='normal'?'bg-slate-100 text-slate-600':'text-slate-400 hover:bg-slate-50'}`}>1x</button>
+                            <button onClick={()=>setTtsSpeed('fast')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${ttsSpeed==='fast'?'bg-amber-100 text-amber-600':'text-slate-400 hover:bg-slate-50'}`}>⚡ Fast</button>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                             <button onClick={()=>handlePlaygroundAudio('play')} disabled={isProcessingAudio || !playgroundInput} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all disabled:opacity-50 text-[10px] font-bold" title="Play"><Volume2 size={12}/> Play</button>
